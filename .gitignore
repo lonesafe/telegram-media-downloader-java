@@ -1,0 +1,8 @@
+/frontend/node_modules/
+/downloads/
+/data/
+.idea
+/logs/
+/memory/
+/tools
+/frontend/dist
