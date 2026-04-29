@@ -5,6 +5,7 @@ com\tgdownloader\repository\ForwardTaskRepository.class
 com\tgdownloader\model\ForwardStatus.class
 com\tgdownloader\service\TelegramClientService.class
 com\tgdownloader\config\SecurityConfig.class
+com\tgdownloader\controller\ForwardController$2.class
 com\tgdownloader\service\PhoneAuthSupplier$1.class
 com\tgdownloader\service\PhoneAuthSupplier$WebAuthData.class
 com\tgdownloader\model\DownloadStatus.class
@@ -22,6 +23,7 @@ com\tgdownloader\dto\AuthRequest.class
 com\tgdownloader\entity\ForwardTask.class
 com\tgdownloader\TelegramMediaDownloaderApplication.class
 com\tgdownloader\config\AutoLoginInitializer.class
+com\tgdownloader\controller\ForwardController$3.class
 com\tgdownloader\dto\DownloadTaskRequest.class
 com\tgdownloader\util\TelegramUtils$1.class
 com\tgdownloader\controller\DownloadController.class

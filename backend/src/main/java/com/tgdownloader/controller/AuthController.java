@@ -5,6 +5,8 @@ import com.tgdownloader.dto.AuthRequest;
 import com.tgdownloader.dto.AuthResponse;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 /**
  * 认证 Controller
  *
@@ -44,5 +46,18 @@ public class AuthController {
     @PostMapping("/logout")
     public ApiResponse<Void> logout() {
         return ApiResponse.success();
+    }
+
+    /**
+     * 检查认证状态
+     * 前端调用: GET /auth/check
+     */
+    @GetMapping("/check")
+    public ApiResponse<Map<String, Object>> checkAuth() {
+        return ApiResponse.success(Map.of(
+            "authenticated", true,
+            "username", "admin",
+            "token", "token-not-required"
+        ));
     }
 }

@@ -36,6 +36,12 @@ public class ForwardController {
     @Autowired
     private ForwardService forwardService;
 
+    @SuppressWarnings("unchecked")
+    @GetMapping("/statistics")
+    public ApiResponse<Map<String, Object>> getStatistics() {
+        return ApiResponse.success((Map<String, Object>) (Map<?, ?>) forwardService.stats());
+    }
+
     @GetMapping("/tasks")
     public ApiResponse<Map<String, Object>> getTasks(
             @RequestParam(defaultValue = "0") int page,
@@ -68,29 +74,56 @@ public class ForwardController {
         }
     }
 
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
-    @GetMapping("/stats")
-    public ApiResponse<Map<String, Object>> getStats() {
+    /**
+     * 创建转发任务
+     * 前端调用: POST /forward/tasks?sourceChatId=xxx&messageId=xxx&targetChatId=xxx
+     */
+    @PostMapping("/tasks")
+    public ApiResponse<Map<String, Object>> createTask(
+            @RequestParam String sourceChatId,
+            @RequestParam Long messageId,
+            @RequestParam String targetChatId) {
         try {
-            long total = forwardTaskRepository.count();
-            long success = forwardTaskRepository.countByStatus("SUCCESS");
-            long failed = forwardTaskRepository.countByStatus("FAILED");
-            long forwarding = forwardTaskRepository.countByStatus("FORWARDING");
-            long stopped = forwardTaskRepository.countByStatus("STOPPED");
-
-            Map<String, Object> stats = new HashMap<>();
-            stats.put("total", total);
-            stats.put("success", success);
-            stats.put("failed", failed);
-            stats.put("forwarding", forwarding);
-            stats.put("stopped", stopped);
-            return ApiResponse.success(stats);
+            ForwardTask task = forwardService.createTask(
+                Long.parseLong(sourceChatId),
+                messageId,
+                Long.parseLong(targetChatId),
+                false // isAuto = false (手动)
+            );
+            return ApiResponse.success(Map.of("taskId", task.getId(), "message", "转发任务已创建"));
         } catch (Exception e) {
-            return ApiResponse.error("获取统计失败: " + e.getMessage());
+            log.error("创建转发任务失败", e);
+            return ApiResponse.error("创建转发任务失败: " + e.getMessage());
         }
     }
-    */
+
+    /**
+     * 批量创建转发任务
+     * 前端调用: POST /forward/tasks/batch
+     */
+    @PostMapping("/tasks/batch")
+    public ApiResponse<Map<String, Object>> createBatchTasks(@RequestBody Map<String, Object> body) {
+        try {
+            String sourceChatId = body.get("sourceChatId").toString();
+            List<Long> messageIds = (List<Long>) body.get("messageIds");
+            String targetChatId = body.get("targetChatId").toString();
+
+            int created = 0;
+            for (Long msgId : messageIds) {
+                ForwardTask task = new ForwardTask();
+                task.setSourceChatId(Long.parseLong(sourceChatId));
+                task.setTargetChatId(Long.parseLong(targetChatId));
+                task.setMessageId(msgId);
+                task.setStatus("PENDING");
+                forwardTaskRepository.save(task);
+                created++;
+            }
+            return ApiResponse.success(Map.of("created", created, "message", "已创建 " + created + " 个转发任务"));
+        } catch (Exception e) {
+            log.error("批量创建转发任务失败", e);
+            return ApiResponse.error("批量创建转发任务失败: " + e.getMessage());
+        }
+    }
 
     @GetMapping("/listener/config")
     public ApiResponse<Map<String, Object>> getListenerConfig() {
@@ -141,21 +174,15 @@ public class ForwardController {
         }
     }
 
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
-    @GetMapping("/listener/status")
-    public ApiResponse<Map<String, Object>> getListenerStatus() {
+    @DeleteMapping("/listener/rules/{ruleId}")
+    public ApiResponse<String> deleteRule(@PathVariable Long ruleId) {
         try {
-            Map<String, Object> status = new HashMap<>();
-            status.put("listening", forwardService.isListening());
-            status.put("sourceChatIds", new java.util.HashSet<>(forwardService.getSourceChatIds()));
-            status.put("targetChatId", forwardService.getTargetChatId());
-            return ApiResponse.success(status);
+            // 删除监听规则（暂不实现具体逻辑）
+            return ApiResponse.success("规则已删除");
         } catch (Exception e) {
-            return ApiResponse.error("获取监听状态失败: " + e.getMessage());
+            return ApiResponse.error("删除规则失败: " + e.getMessage());
         }
     }
-    */
 
     /**
      * 启动转发监听（从请求体读取配置并保存到数据库，然后启动）。
@@ -206,18 +233,84 @@ public class ForwardController {
         }
     }
 
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
-    @PostMapping("/task/{id}/cancel")
-    public ApiResponse<String> cancelTask(@PathVariable Long id) {
+    /**
+     * 添加源聊天
+     * 前端调用: POST /forward/listener/sources { chatId }
+     */
+    @PostMapping("/listener/sources")
+    public ApiResponse<String> addSourceChat(@RequestBody Map<String, Object> body) {
         try {
-            forwardService.stopTask(id);
-            return ApiResponse.success("任务已取消");
+            Object chatIdObj = body.get("chatId");
+            if (chatIdObj == null) {
+                return ApiResponse.error("chatId 不能为空");
+            }
+            Long chatId = Long.valueOf(chatIdObj.toString());
+            
+            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            if (cfg == null) {
+                cfg = new TelegramConfig("default");
+            }
+            
+            // 获取现有sourceChatIds
+            List<Long> sourceIds = new java.util.ArrayList<>();
+            if (cfg.getForwardListenerSourceChatIds() != null && !cfg.getForwardListenerSourceChatIds().isEmpty()) {
+                sourceIds = json.readValue(cfg.getForwardListenerSourceChatIds(), new TypeReference<List<Long>>() {});
+            }
+            if (!sourceIds.contains(chatId)) {
+                sourceIds.add(chatId);
+                cfg.setForwardListenerSourceChatIds(json.writeValueAsString(sourceIds));
+                configRepo.save(cfg);
+            }
+            return ApiResponse.success("源聊天已添加");
         } catch (Exception e) {
-            return ApiResponse.error("取消任务失败: " + e.getMessage());
+            return ApiResponse.error("添加源聊天失败: " + e.getMessage());
         }
     }
-    */
+
+    /**
+     * 移除源聊天
+     * 前端调用: DELETE /forward/listener/sources/{chatId}
+     */
+    @DeleteMapping("/listener/sources/{chatId}")
+    public ApiResponse<String> removeSourceChat(@PathVariable Long chatId) {
+        try {
+            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            if (cfg != null && cfg.getForwardListenerSourceChatIds() != null) {
+                List<Long> sourceIds = json.readValue(cfg.getForwardListenerSourceChatIds(), new TypeReference<List<Long>>() {});
+                sourceIds.remove(chatId);
+                cfg.setForwardListenerSourceChatIds(json.writeValueAsString(sourceIds));
+                configRepo.save(cfg);
+            }
+            return ApiResponse.success("源聊天已移除");
+        } catch (Exception e) {
+            return ApiResponse.error("移除源聊天失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 设置目标聊天
+     * 前端调用: POST /forward/listener/target { chatId }
+     */
+    @PostMapping("/listener/target")
+    public ApiResponse<String> setTargetChat(@RequestBody Map<String, Object> body) {
+        try {
+            Object chatIdObj = body.get("chatId");
+            if (chatIdObj == null) {
+                return ApiResponse.error("chatId 不能为空");
+            }
+            Long chatId = Long.valueOf(chatIdObj.toString());
+            
+            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            if (cfg == null) {
+                cfg = new TelegramConfig("default");
+            }
+            cfg.setForwardListenerTargetChatId(chatId);
+            configRepo.save(cfg);
+            return ApiResponse.success("目标聊天已设置");
+        } catch (Exception e) {
+            return ApiResponse.error("设置目标聊天失败: " + e.getMessage());
+        }
+    }
 
     @PostMapping("/task/{id}/retry")
     public ApiResponse<String> retryTask(@PathVariable Long id) {
@@ -228,41 +321,6 @@ public class ForwardController {
             return ApiResponse.error("重试任务失败: " + e.getMessage());
         }
     }
-
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
-    @PostMapping("/task/batch-cancel")
-    public ApiResponse<String> batchCancel(@RequestBody Map<String, Object> body) {
-        try {
-            Object ids = body.get("ids");
-            if (ids instanceof java.util.List) {
-                java.util.List<?> list = (java.util.List<?>) ids;
-                for (Object id : list) {
-                    forwardService.stopTask(((Number) id).longValue());
-                }
-            }
-            return ApiResponse.success("批量取消完成");
-        } catch (Exception e) {
-            return ApiResponse.error("批量取消失败: " + e.getMessage());
-        }
-    }
-
-    @PostMapping("/task/batch-retry")
-    public ApiResponse<String> batchRetry(@RequestBody Map<String, Object> body) {
-        try {
-            Object ids = body.get("ids");
-            if (ids instanceof java.util.List) {
-                java.util.List<?> list = (java.util.List<?>) ids;
-                for (Object id : list) {
-                    forwardService.retryTask(((Number) id).longValue());
-                }
-            }
-            return ApiResponse.success("批量重试完成");
-        } catch (Exception e) {
-            return ApiResponse.error("批量重试失败: " + e.getMessage());
-        }
-    }
-    */
 
     @DeleteMapping("/task/{id}")
     public ApiResponse<String> deleteTask(@PathVariable Long id) {

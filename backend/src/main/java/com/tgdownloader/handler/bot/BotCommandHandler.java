@@ -43,6 +43,8 @@ public class BotCommandHandler {
     private DownloadCoreService downloadCoreService;
     @Autowired
     private TelegramClientService telegramClientService;
+    @Autowired
+    private TelegramUtils telegramUtils;
 
     @Setter
     private SimpleTelegramClient botClient;
@@ -113,8 +115,14 @@ public class BotCommandHandler {
                         sendTextMessage(chatId, "解析链接失败，请确保 Bot 有权限访问该群组");
                         return;
                     }
-                    ChatConfig cfg = getOrCreateChatConfig(String.valueOf(msg.chatId));
-                    DownloadTask task = buildTask(cfg, msg);
+                    ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(msg.chatId))
+                            .orElseGet(() -> {
+                                ChatConfig c = new ChatConfig();
+                                c.setChatId(String.valueOf(msg.chatId));
+                                c.setEnabled(true);
+                                return chatConfigRepository.save(c);
+                            });
+                    DownloadTask task = telegramUtils.buildTask(cfg, msg);
                     if (task == null) {
                         sendTextMessage(chatId, "该消息类型不在下载类型配置中，已跳过:\n链接: " + link);
                         return;
@@ -135,8 +143,14 @@ public class BotCommandHandler {
                         try {
                             TdApi.Message msg = resolveMessageFromLink(baseUrl + "/" + id);
                             if (msg != null) {
-                                ChatConfig cfg = getOrCreateChatConfig(String.valueOf(msg.chatId));
-                                DownloadTask task = buildTask(cfg, msg);
+                                ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(msg.chatId))
+                                    .orElseGet(() -> {
+                                        ChatConfig c = new ChatConfig();
+                                        c.setChatId(String.valueOf(msg.chatId));
+                                        c.setEnabled(true);
+                                        return chatConfigRepository.save(c);
+                                    });
+                                DownloadTask task = telegramUtils.buildTask(cfg, msg);
                                 if (task != null) {
                                     downloadCoreService.startDownload(task);
                                     ok++;
@@ -289,7 +303,13 @@ public class BotCommandHandler {
             sendTextMessage(chatId, "无法解析 Chat ID，请检查输入");
             return;
         }
-        ChatConfig cfg = getOrCreateChatConfig(String.valueOf(targetId));
+        ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(targetId))
+                .orElseGet(() -> {
+                    ChatConfig c = new ChatConfig();
+                    c.setChatId(String.valueOf(targetId));
+                    c.setEnabled(true);
+                    return chatConfigRepository.save(c);
+                });
         sendTextMessage(chatId, "已设置当前群组: " + targetId + "\n标题: " + nvl(cfg.getTitle(), "(无)"));
     }
 
@@ -371,8 +391,14 @@ public class BotCommandHandler {
                 sendTextMessage(chatId, "解析链接失败");
                 return;
             }
-            ChatConfig cfg = getOrCreateChatConfig(String.valueOf(msg.chatId));
-            DownloadTask task = buildTask(cfg, msg);
+            ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(msg.chatId))
+                    .orElseGet(() -> {
+                        ChatConfig c = new ChatConfig();
+                        c.setChatId(String.valueOf(msg.chatId));
+                        c.setEnabled(true);
+                        return chatConfigRepository.save(c);
+                    });
+            DownloadTask task = telegramUtils.buildTask(cfg, msg);
             if (task == null) {
                 sendTextMessage(chatId, "该消息类型不在下载类型配置中，已跳过:\n链接: " + link);
                 return;
@@ -464,43 +490,6 @@ public class BotCommandHandler {
         } catch (NumberFormatException e) {
             return 0;
         }
-    }
-
-    private ChatConfig getOrCreateChatConfig(String chatId) {
-        return chatConfigRepository.findByChatId(chatId)
-                .orElseGet(() -> {
-                    ChatConfig c = new ChatConfig();
-                    c.setChatId(chatId);
-                    return chatConfigRepository.save(c);
-                });
-    }
-
-    private DownloadTask buildTask(ChatConfig cfg, TdApi.Message msg) {
-        // 检查媒体类型是否在允许的下载类型中
-        String downloadTypes = null;
-        try {
-            var cfgEntity = configRepository.findByConfigName("default").orElse(null);
-            if (cfgEntity != null) {
-                downloadTypes = cfgEntity.getDownloadTypes();
-            }
-        } catch (Exception e) {
-            log.warn("获取下载类型配置失败: {}", e.getMessage());
-        }
-        
-        if (!TelegramUtils.isAllowedDownloadType(msg, downloadTypes)) {
-            log.info("消息类型不在允许的下载类型中，跳过: msgId={}", msg.id);
-            return null;
-        }
-        
-        DownloadTask task = new DownloadTask();
-        task.setFileName(Objects.requireNonNull(TelegramUtils.getFileRef(msg)).fileName());
-        task.setChatId(String.valueOf(msg.chatId));
-        task.setMessageId(msg.id);
-        task.setChatConfig(cfg);
-        task.setStatus("PENDING");
-        task.setStartedAt(LocalDateTime.now());
-        task.setTelegramMessage(msg);
-        return task;
     }
 
     public void sendTextMessage(long chatId, String text) {

@@ -11,6 +11,8 @@ import com.tgdownloader.service.TelegramClientService;
 import com.tgdownloader.util.ByteFormatUtil;
 import com.tgdownloader.util.TelegramUtils;
 import it.tdlight.jni.TdApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -28,39 +30,56 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/download")
 public class DownloadController {
 
+    private static final Logger log = LoggerFactory.getLogger(DownloadController.class);
+
     @Autowired
     private DownloadTaskRepository downloadTaskRepository;
     @Autowired
     private DownloadCoreService downloadCoreService;
     @Autowired
-    private TelegramClientService telegramService;
-
-    private volatile boolean isDownloading = true;
+    private TelegramUtils telegramUtils;
+    @Autowired
+    private TelegramClientService telegramClientService;
 
     @GetMapping("/list")
     public ApiResponse<Map<String, Object>> getList(
-            @RequestParam(defaultValue = "downloading") String alreadyDown,
+            @RequestParam(defaultValue = "downloading") String tab,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
 
         org.springframework.data.domain.Page<DownloadTask> taskPage;
         PageRequest pageRequest = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        taskPage = switch (alreadyDown) {
+        taskPage = switch (tab) {
             case "downloading" ->
-                // 正在下载：status = DOWNLOADING（在运行池中）
+                // 正在下载：DOWNLOADING
                     downloadTaskRepository.findByStatusIn(
                             List.of(DownloadStatus.DOWNLOADING.name()),
                             pageRequest);
             case "waiting" ->
-                // 等待下载：PENDING + PAUSED
+                // 等待中：QUEUED（已在队列排队）+ PENDING（已暂停）
                     downloadTaskRepository.findByStatusIn(
-                            List.of(DownloadStatus.PENDING.name(), DownloadStatus.PAUSED.name(), DownloadStatus.FAILED_DOWNLOAD.name(), DownloadStatus.SKIP_DOWNLOAD.name()),
+                            List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()),
+                            pageRequest);
+            case "paused" ->
+                // 已暂停：PAUSED（用户手动停止）
+                    downloadTaskRepository.findByStatusIn(
+                            List.of(DownloadStatus.PAUSED.name()),
+                            pageRequest);
+            case "skipped" ->
+                // 已跳过：SKIP_DOWNLOAD（文件已存在或被过滤规则排除）
+                    downloadTaskRepository.findByStatusIn(
+                            List.of(DownloadStatus.SKIP_DOWNLOAD.name()),
                             pageRequest);
             case "completed" ->
-                // 下载完成：SUCCESS + SKIP + FAILED
+                // 下载完成：SUCCESS_DOWNLOAD
                     downloadTaskRepository.findByStatusIn(
                             List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()),
+                            pageRequest);
+            case "failed" ->
+                // 下载失败：FAILED_DOWNLOAD（可重试）
+                    downloadTaskRepository.findByStatusIn(
+                            List.of(DownloadStatus.FAILED_DOWNLOAD.name()),
                             pageRequest);
             default ->
                 // all: 全部任务
@@ -77,9 +96,11 @@ public class DownloadController {
         // 统计各选项卡数量
         long downloadingCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
         long waitingCount = downloadTaskRepository.countByStatusIn(
-                List.of(DownloadStatus.PENDING.name(), DownloadStatus.PAUSED.name()));
-        long completedCount = downloadTaskRepository.countByStatusIn(
-                List.of(DownloadStatus.SUCCESS_DOWNLOAD.name(), DownloadStatus.SKIP_DOWNLOAD.name(), DownloadStatus.FAILED_DOWNLOAD.name()));
+                List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
+        long pausedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
+        long skippedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
+        long completedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
+        long failedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("list", result);
@@ -90,7 +111,10 @@ public class DownloadController {
         // 各选项卡计数
         response.put("downloadingCount", downloadingCount);
         response.put("waitingCount", waitingCount);
+        response.put("pausedCount", pausedCount);
+        response.put("skippedCount", skippedCount);
         response.put("completedCount", completedCount);
+        response.put("failedCount", failedCount);
 
         return ApiResponse.success(response);
     }
@@ -110,38 +134,6 @@ public class DownloadController {
         return ApiResponse.success(speed);
     }
 
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
-    @PostMapping("/state")
-    public ApiResponse<String> setState(@RequestParam String state) {
-        isDownloading = "continue".equalsIgnoreCase(state);
-
-        if (isDownloading) {
-            downloadCoreService.resumeAll();
-        } else {
-            downloadCoreService.pauseAll();
-        }
-
-        return ApiResponse.success(isDownloading ? "continue" : "pause");
-    }
-
-    @PostMapping("/task")
-    public ApiResponse<Map<String, Object>> createTask(@RequestBody DownloadTaskRequest request) throws Exception {
-        TdApi.Message msg = telegramService.getMessageByLink(request.getChatLink());
-        DownloadTask task = new DownloadTask();
-        task.setChatId(String.valueOf(msg.chatId));
-        task.setStatus(DownloadStatus.PENDING.name());
-        task.setFileName(TelegramUtils.getFileName(msg));
-        task.setMessageId(msg.id);
-        task.setTelegramMessage(msg);
-
-        DownloadTask saved = downloadTaskRepository.save(task);
-        downloadCoreService.startDownload(saved);
-
-        return ApiResponse.success(toMap(saved));
-    }
-    */
-
     @PostMapping("/stop/{taskId}")
     public ApiResponse<Void> stopTask(@PathVariable Long taskId) {
         DownloadTask task = downloadTaskRepository.findById(taskId)
@@ -149,7 +141,7 @@ public class DownloadController {
 
         task.setIsStopTransmission(true);
         task.setStatus(DownloadStatus.PAUSED.name());
-        downloadTaskRepository.save(task);
+        telegramUtils.saveTask(task);
 
         downloadCoreService.stopDownload(taskId);
 
@@ -158,7 +150,17 @@ public class DownloadController {
 
     @PostMapping("/resume/{taskId}")
     public ApiResponse<Void> resumeTask(@PathVariable Long taskId) {
-        downloadCoreService.resumeTask(taskId);
+        DownloadTask task = downloadTaskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
+
+        task.setIsStopTransmission(false);
+        task.setFinishedAt(null);
+        // 标记为 PENDING，resumeAll 会把它们重新加入队列
+        task.setStatus(DownloadStatus.PENDING.name());
+        telegramUtils.saveTask(task);
+
+        // 立即将 PENDING 任务加入队列
+        downloadCoreService.startDownload(task);
         return ApiResponse.success();
     }
 
@@ -192,6 +194,59 @@ public class DownloadController {
         );
         downloadTaskRepository.deleteAll(completed);
         return ApiResponse.success();
+    }
+
+    /**
+     * 设置下载状态（暂停/继续全部任务）
+     * 前端调用: POST /download/state?state=pause 或 ?state=continue
+     */
+    @PostMapping("/state")
+    public ApiResponse<Void> setState(@RequestParam String state) {
+        try {
+            if ("pause".equals(state)) {
+                downloadCoreService.pauseAll();
+            } else if ("continue".equals(state)) {
+                downloadCoreService.resumeAll();
+            }
+            return ApiResponse.success();
+        } catch (Exception e) {
+            log.error("设置下载状态失败: {}", e.getMessage());
+            return ApiResponse.error("设置下载状态失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 创建下载任务
+     * 前端调用: POST /download/task
+     */
+    @PostMapping("/task")
+    public ApiResponse<Map<String, Object>> createTask(@RequestBody DownloadTaskRequest request) {
+        try {
+            // 使用 chatLink 解析 chatId 和 messageId
+            String chatLink = request.getChatLink();
+            if (chatLink == null || chatLink.isEmpty()) {
+                return ApiResponse.error("chatLink 不能为空");
+            }
+            
+            // 解析链接获取 chatId 和 messageId
+            Map<String, Object> parsed = telegramClientService.parseMessageLink(chatLink);
+            long chatId = (long) parsed.get("chatId");
+            long messageId = (long) parsed.get("messageId");
+            
+            // 创建任务
+            DownloadTask task = new DownloadTask();
+            task.setChatId(String.valueOf(chatId));
+            task.setMessageId(messageId);
+            task.setStatus("PENDING");
+            task.setCreatedAt(java.time.LocalDateTime.now());
+            task = downloadTaskRepository.save(task);
+            
+            downloadCoreService.startDownload(task);
+            return ApiResponse.success(Map.of("taskId", task.getId(), "message", "任务已创建"));
+        } catch (Exception e) {
+            log.error("创建下载任务失败: {}", e.getMessage());
+            return ApiResponse.error("创建下载任务失败: " + e.getMessage());
+        }
     }
 
     @DeleteMapping("/task/{taskId}")

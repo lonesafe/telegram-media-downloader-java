@@ -174,6 +174,15 @@
               <el-input-number v-model="downloadConfig.maxConcurrentTasks" :min="1" :max="20" />
             </el-form-item>
             
+            <el-form-item label="下载类型">
+              <el-checkbox-group v-model="downloadConfig.downloadTypes">
+                <el-checkbox label="video">视频</el-checkbox>
+                <el-checkbox label="audio">音频</el-checkbox>
+                <el-checkbox label="photo">图片</el-checkbox>
+                <el-checkbox label="document">文档</el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+            
             <el-form-item label="隐藏文件名">
               <el-switch v-model="downloadConfig.hideFileName" />
             </el-form-item>
@@ -454,6 +463,7 @@ const downloadConfig = reactive({
   savePath: './downloads',
   tempPath: './temp',
   maxConcurrentTasks: 5,
+  downloadTypes: ['video'],
   hideFileName: false,
   enableDownloadTxt: false,
   dateFormat: 'yyyy_MM'
@@ -769,8 +779,14 @@ const saveAllConfig = async () => {
         savedMessagesEnabled: savedMessagesConfig.enabled
       }),
       configApi.save({
-        ...downloadConfig,
-        ...otherConfig
+        ...otherConfig,
+        savePath: downloadConfig.savePath,
+        tempPath: downloadConfig.tempPath,
+        maxConcurrentTasks: downloadConfig.maxConcurrentTasks,
+        downloadTypes: JSON.stringify(downloadConfig.downloadTypes),
+        hideFileName: downloadConfig.hideFileName,
+        enableDownloadTxt: downloadConfig.enableDownloadTxt,
+        dateFormat: downloadConfig.dateFormat
       }),
       configApi.saveProxy(proxyConfig),
       configApi.saveCloud(cloudConfig)
@@ -828,10 +844,20 @@ const loadConfig = async () => {
     try {
       const baseConfig = await configApi.get()
       if (baseConfig) {
+        // 解析下载类型（JSON数组字符串转为数组）
+        let downloadTypes = ['video']
+        if (baseConfig.downloadTypes) {
+          try {
+            downloadTypes = JSON.parse(baseConfig.downloadTypes)
+          } catch (e) {
+            console.warn('解析下载类型失败，使用默认值:', e)
+          }
+        }
         Object.assign(downloadConfig, {
           savePath: baseConfig.savePath || './downloads',
           tempPath: baseConfig.tempPath || './temp',
           maxConcurrentTasks: baseConfig.maxConcurrentTasks || 5,
+          downloadTypes: downloadTypes,
           hideFileName: baseConfig.hideFileName || false,
           enableDownloadTxt: baseConfig.enableDownloadTxt || false,
           dateFormat: baseConfig.dateFormat || 'yyyy_MM'

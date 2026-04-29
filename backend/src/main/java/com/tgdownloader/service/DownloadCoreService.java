@@ -6,15 +6,23 @@ import com.tgdownloader.entity.TelegramConfig;
 import com.tgdownloader.model.DownloadStatus;
 import com.tgdownloader.repository.DownloadTaskRepository;
 import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.util.TelegramUtils;
 import it.tdlight.jni.TdApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -37,10 +45,20 @@ public class DownloadCoreService {
 
     @Autowired
     private TelegramClientService telegramClient;
+    @Autowired
+    private DownloadTaskRepository downloadTaskRepository;
+    @Autowired
+    private TelegramUtils telegramUtils;
 
-    private final ExecutorService executor = Executors.newFixedThreadPool(5);
+    private ThreadPoolExecutor executor;
+    private int currentMaxConcurrent = 5;
+    // 下载任务队列：新任务和恢复的任务都加入队列，由消费者线程分发到线程池
+    private final LinkedBlockingQueue<DownloadTask> downloadQueue = new LinkedBlockingQueue<>();
+    // 正在运行的任务ID集合（用于判断任务是否已在队列或执行中，防止重复）
+    private final Set<Long> queuedOrRunning = ConcurrentHashMap.newKeySet();
     private final Map<Long, Future<?>> runningTasks = new ConcurrentHashMap<>();
     private final AtomicBoolean paused = new AtomicBoolean(false);
+    private volatile boolean consumerStarted = false;
 
     private final AtomicLong totalDownloaded = new AtomicLong(0);
     private final AtomicLong totalUploaded = new AtomicLong(0);
@@ -78,35 +96,129 @@ public class DownloadCoreService {
     }
 
     /**
-     * 提交下载任务到线程池执行
+     * 启动下载队列消费者线程（仅执行一次）
+     */
+    @PostConstruct
+    public void init() {
+        // 从配置读取并发数
+        int poolSize = configRepo.findByConfigName("default")
+                .map(TelegramConfig::getMaxConcurrentTasks)
+                .orElse(5);
+        if (poolSize < 1) poolSize = 1;
+        currentMaxConcurrent = poolSize;
+        executor = new ThreadPoolExecutor(poolSize, poolSize, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        log.info("下载线程池初始化: 并发数={}", poolSize);
+        startQueueConsumer();
+    }
+
+    /**
+     * 动态调整线程池并发数（前端修改配置时调用）
+     */
+    public void updateConcurrency(int newSize) {
+        if (newSize < 1) newSize = 1;
+        if (newSize == currentMaxConcurrent) return;
+        int oldSize = currentMaxConcurrent;
+        currentMaxConcurrent = newSize;
+        executor.setCorePoolSize(newSize);
+        executor.setMaximumPoolSize(newSize);
+        log.info("下载并发数已调整: {} -> {}", oldSize, newSize);
+    }
+
+    /**
+     * 启动下载队列消费者线程（仅执行一次）
+     */
+    private void startQueueConsumer() {
+        if (consumerStarted) return;
+        consumerStarted = true;
+        Thread consumer = new Thread(this::queueConsumerLoop, "DownloadQueueConsumer");
+        consumer.setDaemon(true);
+        consumer.start();
+        log.info("下载队列消费者已启动");
+    }
+
+    /**
+     * 队列消费者循环：从队列取任务，提交到线程池执行
+     */
+    private void queueConsumerLoop() {
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                DownloadTask task = downloadQueue.take(); // 阻塞等待
+
+                // 如果全局暂停，则把任务标记为 PENDING 并等待恢复
+                if (paused.get()) {
+                    task.setStatus(DownloadStatus.PENDING.name());
+                    telegramUtils.saveTask(task);
+                    queuedOrRunning.remove(task.getId());
+                    continue;
+                }
+
+                // 再次检查是否已被停止
+                if (Boolean.TRUE.equals(task.getIsStopTransmission())) {
+                    task.setStatus(DownloadStatus.PAUSED.name());
+                    telegramUtils.saveTask(task);
+                    queuedOrRunning.remove(task.getId());
+                    continue;
+                }
+
+                task.setStartedAt(LocalDateTime.now());
+                task.setStatus(DownloadStatus.PENDING.name());
+                telegramUtils.saveTask(task);
+
+                Future<?> future = executor.submit(() -> executeDownload(task));
+                runningTasks.put(task.getId(), future);
+                log.info("队列分发任务: {}, chatId={}, msgId={}", task.getId(), task.getChatId(), task.getMessageId());
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                log.error("队列消费异常: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * 提交下载任务到队列（程序启动或新下载时调用）
      */
     public void startDownload(DownloadTask task) {
-        if (paused.get()) {
-            log.info("下载已暂停，任务 {} 在队列中", task.getId());
+        // 防止重复入队
+        if (!queuedOrRunning.add(task.getId())) {
+            log.info("任务 {} 已在队列或运行中，跳过", task.getId());
             return;
         }
 
-        task.setStartedAt(LocalDateTime.now());
-        task.setStatus(DownloadStatus.PENDING.name());
-        taskRepo.save(task);
+        // 如果全局暂停，直接标记为 PENDING
+        if (paused.get()) {
+            task.setStatus(DownloadStatus.PENDING.name());
+            telegramUtils.saveTask(task);
+            log.info("任务 {} 已暂停，标记为 PENDING", task.getId());
+            return;
+        }
 
-        Future<?> future = executor.submit(() -> executeDownload(task));
-        runningTasks.put(task.getId(), future);
-        log.info("开始下载任务: {}, chatId={}, msgId={}", task.getId(), task.getChatId(), task.getMessageId());
+        // 加入队列
+        task.setStatus(DownloadStatus.QUEUED.name());
+        downloadQueue.offer(task);
+        telegramUtils.saveTask(task);
+        log.info("任务 {} 已加入下载队列", task.getId());
     }
 
     /**
      * 手动停止指定任务（标记为 PAUSED，可恢复）
      */
     public void stopDownload(Long taskId) {
+        // 1. 取消正在执行的任务
         Future<?> f = runningTasks.remove(taskId);
         if (f != null) f.cancel(true);
-
+        // 2. 从队列中移除
+        downloadQueue.removeIf(t -> t.getId().equals(taskId));
+        // 3. 从追踪集合移除
+        queuedOrRunning.remove(taskId);
+        // 4. 更新数据库状态
         taskRepo.findById(taskId).ifPresent(task -> {
             task.setIsStopTransmission(true);
             task.setStatus(DownloadStatus.PAUSED.name());
             task.setFinishedAt(LocalDateTime.now());
-            taskRepo.save(task);
+            telegramUtils.saveTask(task);
         });
         log.info("已暂停任务: {}", taskId);
     }
@@ -119,40 +231,40 @@ public class DownloadCoreService {
             task.setIsStopTransmission(false);
             task.setStatus(DownloadStatus.PENDING.name());
             task.setFinishedAt(null);
-            taskRepo.save(task);
             startDownload(task);
             log.info("已恢复任务: {}", taskId);
         });
     }
 
     /**
-     * 暂停所有任务（阻止新任务启动）
+     * 暂停所有任务（阻止新任务启动，并将队列中的任务标记为 PENDING）
      */
     public void pauseAll() {
         paused.set(true);
-        log.info("已暂停所有下载");
+        // 队列中剩余的任务全部标记为 PENDING
+        downloadQueue.drainTo(new java.util.ArrayList<>());
+        // 注意：已经在 executeDownload 里被 take 走的任务，由 executeDownload 内部处理
+        log.info("已暂停所有下载，队列已清空");
     }
 
     /**
-     * 恢复暂停的任务
+     * 恢复所有任务（将 PENDING 状态的任务重新加入队列）
      */
     public void resumeAll() {
         paused.set(false);
-        taskRepo.findByStatus(DownloadStatus.DOWNLOADING.name())
-                .forEach(task -> {
-                    task.setStatus(DownloadStatus.PAUSED.name());
-                    taskRepo.save(task);
-                    startDownload(task);
-                });
         log.info("已恢复所有下载");
-    }
-
-    /**
-     * 停止全部任务
-     */
-    public void stopAll() {
-        runningTasks.keySet().forEach(this::stopDownload);
-        log.info("已停止所有任务");
+        // 查找所有 PENDING 状态的任务，重新加入队列
+        List<DownloadTask> pendingTasks = taskRepo.findByStatusIn(
+                List.of(DownloadStatus.PENDING.name()), Pageable.unpaged()).getContent();
+        for (DownloadTask t : pendingTasks) {
+            if (!queuedOrRunning.contains(t.getId())) {
+                t.setStatus(DownloadStatus.QUEUED.name());
+                telegramUtils.saveTask(t);
+                downloadQueue.offer(t);
+                queuedOrRunning.add(t.getId());
+            }
+        }
+        log.info("已将 {} 个 PENDING 任务重新加入队列", pendingTasks.size());
     }
 
     /**
@@ -196,15 +308,15 @@ public class DownloadCoreService {
             task.setTotalTask(task.getTotalTask() + 1);
             task.setStatus(DownloadStatus.DOWNLOADING.name());
             task.setIsStopTransmission(false);
-            taskRepo.save(task);
+            telegramUtils.saveTask(task);
 
             // 检查用户客户端是否已连接
             if (!telegramClient.isConnected()) {
                 log.warn("用户客户端未连接，跳过任务 {}", task.getId());
-                task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
                 task.setFailedTask(task.getFailedTask() + 1);
+                task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
                 task.setFinishedAt(LocalDateTime.now());
-                taskRepo.save(task);
+                telegramUtils.saveTask(task);
                 return;
             }
 
@@ -249,9 +361,11 @@ public class DownloadCoreService {
                             boolean progressChanged = fileSize > 0 && (downloadedSize - lastSaved) * 100 / fileSize >= 5;
                             boolean timeExpired = now - lastTimeMs > 2000;
                             if (progressChanged || timeExpired || downloadedSize == fileSize) {
-                                task.setDownloadedSize(downloadedSize);
-                                task.setFileSize(fileSize);
-                                taskRepo.save(task);
+                                downloadTaskRepository.findById(taskId).ifPresent(task1 -> {
+                                    task1.setDownloadedSize(downloadedSize);
+                                    task1.setFileSize(fileSize);
+                                    downloadTaskRepository.save(task1);
+                                });
                                 lastSave[0] = downloadedSize;
                                 lastSave[1] = now;
                             }
@@ -262,8 +376,10 @@ public class DownloadCoreService {
 
             if (result == null) {
                 log.info("消息无媒体文件，跳过: msgId={}", msg.id);
-                task.setStatus(DownloadStatus.SKIP_DOWNLOAD.name());
                 task.setSkipTask(task.getSkipTask() + 1);
+                task.setStatus(DownloadStatus.SKIP_DOWNLOAD.name());
+                task.setFinishedAt(LocalDateTime.now());
+                telegramUtils.saveTask(task);
                 return;
             }
 
@@ -292,7 +408,7 @@ public class DownloadCoreService {
             }
 
             // 获取保存路径
-            String targetDir = savePath != null && !savePath.isEmpty() ? savePath 
+            String targetDir = savePath != null && !savePath.isEmpty() ? savePath
                     : result.localPath().substring(0, result.localPath().lastIndexOf(File.separator) + 1);
             File targetDirFile = new File(targetDir);
             if (!targetDirFile.exists()) {
@@ -303,8 +419,10 @@ public class DownloadCoreService {
             File targetFile = new File(targetDir + File.separator + newFileName);
             if (targetFile.exists()) {
                 log.info("文件已存在，跳过: {}", targetFile.getAbsolutePath());
-                task.setStatus(DownloadStatus.SKIP_DOWNLOAD.name());
                 task.setSkipTask(task.getSkipTask() + 1);
+                task.setStatus(DownloadStatus.SKIP_DOWNLOAD.name());
+                task.setFinishedAt(LocalDateTime.now());
+                telegramUtils.saveTask(task);
                 // 删除临时文件
                 new File(result.localPath()).delete();
                 return;
@@ -315,6 +433,7 @@ public class DownloadCoreService {
                 File tempFile = new File(result.localPath());
                 if (tempFile.renameTo(targetFile)) {
                     newLocalPath = targetFile.getAbsolutePath();
+                    Files.setLastModifiedTime(targetFile.toPath(), FileTime.from(Instant.now()));
                     log.info("文件移动到保存目录: {} → {}", result.localPath(), newLocalPath);
                 } else {
                     log.warn("文件移动失败，使用临时路径: {}", result.localPath());
@@ -325,6 +444,7 @@ public class DownloadCoreService {
                 File oldFile = new File(result.localPath());
                 File newFile = new File(newLocalPath.substring(0, newLocalPath.lastIndexOf(File.separator) + 1) + newFileName);
                 if (oldFile.renameTo(newFile)) {
+                    Files.setLastModifiedTime(newFile.toPath(), FileTime.from(Instant.now()));
                     newLocalPath = newFile.getAbsolutePath();
                     log.info("文件重命名: {} → {}", result.fileName(), newFileName);
                 } else {
@@ -348,21 +468,28 @@ public class DownloadCoreService {
             Thread.currentThread().interrupt();
             // 被 stopDownload 暂停的任务 isStopTransmission=true，保持 PAUSED 状态不覆盖
             if (!Boolean.TRUE.equals(task.getIsStopTransmission())) {
-                task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
                 task.setFailedTask(task.getFailedTask() + 1);
+                task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
+                task.setFinishedAt(LocalDateTime.now());
             }
             log.info("任务 {} 被暂停", task.getId());
         } catch (Exception e) {
             log.error("任务 {} 下载失败: {}", task.getId(), e.getMessage(), e);
-            task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
             task.setFailedTask(task.getFailedTask() + 1);
-        } finally {
-            // 只有当 isStopTransmission=true（手动暂停）且 status 未达终态时，才不覆盖；其他情况 status 已由 try/catch 设置完毕，finally 不再覆盖
-            // 注意：try 里的 return 不会跳过 finally，SUCCESS/SKIP 等终态已在 try 中设置好，finally 只补充 finishTime 和清理内存
+            task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
             task.setFinishedAt(LocalDateTime.now());
-            taskRepo.save(task);
+        } finally {
+            // 终态（SUCCESS/SKIP/FAILED）已在各分支里 setFinishedAt + save
+            // 这里只处理未覆盖的边界情况
+            if (task.getStatus() == null) {
+                task.setStatus(DownloadStatus.FAILED_DOWNLOAD.name());
+                task.setFinishedAt(LocalDateTime.now());
+
+            }
+            telegramUtils.saveTask(task);
             runningTasks.remove(task.getId());
-            taskSpeedTracker.remove(task.getId()); // 清理速度追踪器
+            queuedOrRunning.remove(task.getId());
+            taskSpeedTracker.remove(task.getId());
         }
     }
 

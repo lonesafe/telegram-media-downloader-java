@@ -22,8 +22,11 @@ public enum DownloadStatus {
     /** 已暂停：用户手动停止 */
     PAUSED(5, "已暂停"),
 
-    /** 等待中：任务已创建但尚未开始下载 */
-    PENDING(6, "等待中");
+    /** 排队中：已加入下载队列，等待执行 */
+    QUEUED(6, "排队中"),
+
+    /** 等待中：任务已创建但尚未加入队列 */
+    PENDING(7, "等待中");
 
     private final int code;
     private final String name;

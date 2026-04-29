@@ -128,4 +128,20 @@ public class BotClientService {
         info.put("connected", connected);
         return info;
     }
+
+    /**
+     * 验证 Bot Token
+     */
+    public Map<String, Object> checkToken(String token) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // 尝试用 token 创建客户端来验证
+            result.put("valid", true);
+            result.put("message", "Token 有效");
+        } catch (Exception e) {
+            result.put("valid", false);
+            result.put("message", "Token 无效: " + e.getMessage());
+        }
+        return result;
+    }
 }

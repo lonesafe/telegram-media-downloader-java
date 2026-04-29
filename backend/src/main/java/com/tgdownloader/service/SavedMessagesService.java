@@ -1,6 +1,5 @@
 package com.tgdownloader.service;
 
-import com.tgdownloader.entity.ChatConfig;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.model.DownloadStatus;
 import com.tgdownloader.repository.ChatConfigRepository;
@@ -17,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -35,6 +33,8 @@ public class SavedMessagesService {
     private ChatConfigRepository chatConfigRepo;
     @Autowired
     private TelegramConfigRepository configRepo;
+    @Autowired
+    private TelegramUtils telegramUtils;
 
     private static final int BATCH = 100;
     // 内部状态（监听开关）
@@ -43,7 +43,6 @@ public class SavedMessagesService {
     @Transactional
     public int scanAll(long fromMsgId) {
         int found = 0;
-        List<TdApi.Message> allMessages = new ArrayList<>();
         int limit = 100; // 最大值
 
         while (true) {
@@ -57,7 +56,7 @@ public class SavedMessagesService {
                     limit           // 每次获取数量
             );
 
-            TdApi.FoundChatMessages response = null;
+            TdApi.FoundChatMessages response;
             try {
                 response = telegramClient.getClient().send(request).get(10, TimeUnit.SECONDS);
             } catch (Exception e) {
@@ -105,23 +104,8 @@ public class SavedMessagesService {
 
     private void createTask(TdApi.Message msg) {
         try {
-            ChatConfig cfg = chatConfigRepo.findByChatId(String.valueOf(msg.chatId))
-                    .orElseGet(() -> {
-                        ChatConfig c = new ChatConfig();
-                        c.setChatId(String.valueOf(msg.chatId));
-                        c.setTitle("Saved Messages");
-                        c.setEnabled(true);
-                        return chatConfigRepo.save(c);
-                    });
-            DownloadTask task = new DownloadTask();
-            task.setFileName(Objects.requireNonNull(TelegramUtils.getFileRef(msg)).fileName());
-            task.setChatId(String.valueOf(msg.chatId));
-            task.setMessageId(msg.id);
-            task.setTelegramMessage(msg);
-            task.setChatConfig(cfg);
-            task.setStatus(DownloadStatus.PENDING.name());
-            task.setTotalTask(1);
-            taskRepo.save(task);
+            DownloadTask task = telegramUtils.buildTask(null,msg);
+            if (task == null) return;
             log.info("创建任务: msgId={}", msg.id);
         } catch (Exception e) {
             log.error("创建任务失败: {}", e.getMessage());
@@ -155,6 +139,8 @@ public class SavedMessagesService {
     public void performInitScan() {
         var cfg = configRepo.findByConfigName("default").orElse(null);
         if (cfg == null || !Boolean.TRUE.equals(cfg.getSavedMessagesEnabled())) return;
-        scanAll(0);
+        int found = scanAll(0);
+        log.info("收藏夹初始扫描完成，创建 {} 个任务，触发下载队列", found);
+        startPending();
     }
 }

@@ -16,6 +16,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -450,6 +454,66 @@ public class TelegramClientService {
     public TdApi.Chat searchChatSync(String username) throws Exception {
         if (client == null) throw new IllegalStateException("客户端未连接");
         return client.send(new TdApi.SearchPublicChat(username)).get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 解析消息链接，获取 chatId 和 messageId
+     * 支持格式: t.me/c/数字/消息ID, t.me/用户名/消息ID
+     */
+    public Map<String, Object> parseMessageLink(String link) throws Exception {
+        if (client == null) throw new IllegalStateException("客户端未连接");
+        TdApi.MessageLinkInfo linkResult = client.send(new TdApi.GetMessageLinkInfo(link)).get(10, TimeUnit.SECONDS);
+        
+        Map<String, Object> result = new HashMap<>();
+        if (linkResult != null && linkResult.message != null) {
+            result.put("chatId", linkResult.message.chatId);
+            result.put("messageId", linkResult.message.id);
+        }
+        return result;
+    }
+
+    /**
+     * 获取聊天信息
+     */
+    public Map<String, Object> getChatInfo(long chatId) throws Exception {
+        if (client == null) throw new IllegalStateException("客户端未连接");
+        TdApi.Chat chat = getChatSync(chatId);
+        
+        Map<String, Object> info = new HashMap<>();
+        info.put("id", chat.id);
+        info.put("title", chat.title);
+        info.put("type", chat.type.getClass().getSimpleName());
+        info.put("lastMessage", chat.lastMessage != null ? chat.lastMessage.id : null);
+        info.put("unreadCount", chat.unreadCount);
+        return info;
+    }
+
+    /**
+     * 获取消息列表
+     */
+    public Map<String, Object> getMessages(long chatId, long offset, int limit) throws Exception {
+        if (client == null) throw new IllegalStateException("客户端未连接");
+        TdApi.Chat chat = getChatSync(chatId);
+        
+        // 从最新消息往前获取
+        TdApi.Messages messages = client.send(new TdApi.GetChatHistory(chatId, offset, 0, limit, false)).get(30, TimeUnit.SECONDS);
+        
+        List<Map<String, Object>> messageList = new ArrayList<>();
+        for (TdApi.Message msg : messages.messages) {
+            Map<String, Object> msgMap = new HashMap<>();
+            msgMap.put("id", msg.id);
+            msgMap.put("date", msg.date);
+            msgMap.put("contentType", msg.content.getClass().getSimpleName());
+            if (msg.content instanceof TdApi.MessageText) {
+                msgMap.put("text", ((TdApi.MessageText) msg.content).text.text);
+            }
+            messageList.add(msgMap);
+        }
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("messages", messageList);
+        result.put("totalCount", messages.totalCount);
+        return result;
     }
 
 }

@@ -10,6 +10,7 @@ import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.ForwardService;
 import com.tgdownloader.controller.SavedMessagesController;
 import com.tgdownloader.service.TelegramClientService;
+import com.tgdownloader.util.TelegramUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -31,6 +32,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AutoLoginInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(AutoLoginInitializer.class);
+
+    @Autowired
+    private TelegramUtils telegramUtils;
 
     @Autowired
     private TelegramConfigRepository configRepository;
@@ -123,7 +127,7 @@ public class AutoLoginInitializer implements ApplicationRunner {
             if (DownloadStatus.DOWNLOADING.name().equals(task.getStatus())) {
                 log.info("Task {} was running before crash, resetting status and resuming", task.getId());
                 task.setStatus(DownloadStatus.PAUSED.name());
-                taskRepository.save(task);
+                telegramUtils.saveTask(task);
                 downloadCoreService.resumeTask(task.getId());
             } else if (DownloadStatus.PAUSED.name().equals(task.getStatus()) || DownloadStatus.PENDING.name().equals(task.getStatus())) {
                 downloadCoreService.resumeTask(task.getId());

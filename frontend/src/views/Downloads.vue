@@ -26,25 +26,34 @@
       <!-- 下载速度统计 -->
       <div class="speed-info">
         <el-row :gutter="20">
-          <el-col :span="6">
-            <el-statistic title="下载速度" :value="formatSpeedNum(globalSpeed.downloadSpeed)">
-              <template #suffix>MB/s</template>
+          <el-col :span="4">
+            <el-statistic title="下载速度" :value="formatSpeed(globalSpeed.downloadSpeed)">
+              <template #suffix></template>
             </el-statistic>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="4">
             <el-statistic title="正在下载" :value="tabCounts.downloadingCount" />
           </el-col>
-          <el-col :span="6">
+          <el-col :span="3">
             <el-statistic title="等待中" :value="tabCounts.waitingCount" />
           </el-col>
-          <el-col :span="6">
+          <el-col :span="3">
+            <el-statistic title="已暂停" :value="tabCounts.pausedCount" />
+          </el-col>
+          <el-col :span="3">
+            <el-statistic title="已跳过" :value="tabCounts.skippedCount" />
+          </el-col>
+          <el-col :span="3">
             <el-statistic title="已完成" :value="tabCounts.completedCount" />
+          </el-col>
+          <el-col :span="4">
+            <el-statistic title="下载失败" :value="tabCounts.failedCount" />
           </el-col>
         </el-row>
       </div>
     </el-card>
 
-    <!-- 下载列表 - 三选项卡 -->
+    <!-- 下载列表 - 六选项卡 -->
     <el-card class="list-card">
       <el-tabs v-model="activeTab" @tab-change="onTabChange">
         <!-- 正在下载 -->
@@ -57,12 +66,32 @@
           </template>
         </el-tab-pane>
         
-        <!-- 等待下载 -->
+        <!-- 等待中 -->
         <el-tab-pane name="waiting">
           <template #label>
             <span class="tab-label">
-              等待下载
+              等待中
               <el-badge :value="tabCounts.waitingCount" :max="99" :hidden="tabCounts.waitingCount === 0" />
+            </span>
+          </template>
+        </el-tab-pane>
+        
+        <!-- 已暂停 -->
+        <el-tab-pane name="paused">
+          <template #label>
+            <span class="tab-label">
+              已暂停
+              <el-badge :value="tabCounts.pausedCount" :max="99" :hidden="tabCounts.pausedCount === 0" type="warning" />
+            </span>
+          </template>
+        </el-tab-pane>
+        
+        <!-- 已跳过 -->
+        <el-tab-pane name="skipped">
+          <template #label>
+            <span class="tab-label">
+              已跳过
+              <el-badge :value="tabCounts.skippedCount" :max="99" :hidden="tabCounts.skippedCount === 0" type="info" />
             </span>
           </template>
         </el-tab-pane>
@@ -72,7 +101,17 @@
           <template #label>
             <span class="tab-label">
               下载完成
-              <el-badge :value="tabCounts.completedCount" :max="99" :hidden="tabCounts.completedCount === 0" />
+              <el-badge :value="tabCounts.completedCount" :max="99" :hidden="tabCounts.completedCount === 0" type="success" />
+            </span>
+          </template>
+        </el-tab-pane>
+        
+        <!-- 下载失败 -->
+        <el-tab-pane name="failed">
+          <template #label>
+            <span class="tab-label">
+              下载失败
+              <el-badge :value="tabCounts.failedCount" :max="99" :hidden="tabCounts.failedCount === 0" type="danger" />
             </span>
           </template>
         </el-tab-pane>
@@ -147,7 +186,7 @@
           </template>
         </el-table-column>
         
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button-group>
               <el-button
@@ -164,7 +203,7 @@
                 size="small"
                 @click="resumeTask(row.id)"
               >
-                继续
+                {{ row.status === 'FAILED_DOWNLOAD' ? '重试' : '继续' }}
               </el-button>
               <el-button
                 type="danger"
@@ -244,7 +283,10 @@ const totalCount = ref(0)
 const tabCounts = reactive({
   downloadingCount: 0,
   waitingCount: 0,
-  completedCount: 0
+  pausedCount: 0,
+  skippedCount: 0,
+  completedCount: 0,
+  failedCount: 0
 })
 
 // 实时速度映射（从 API 获取）
@@ -298,12 +340,6 @@ const formatFileSize = (bytes) => {
   return size.toFixed(2) + ' ' + units[unitIndex]
 }
 
-// 格式化速度数值（用于 el-statistic）
-const formatSpeedNum = (bytesPerSec) => {
-  if (!bytesPerSec || bytesPerSec === 0) return 0
-  if (bytesPerSec < 1024 * 1024) return parseFloat((bytesPerSec / 1024).toFixed(1))
-  return parseFloat((bytesPerSec / 1024 / 1024).toFixed(2))
-}
 
 // 格式化速度字符串
 const formatSpeed = (bytesPerSec) => {
@@ -328,6 +364,7 @@ const getStatusType = (status) => {
     'SUCCESS_DOWNLOAD': 'success',
     'FAILED_DOWNLOAD': 'danger',
     'PAUSED': 'warning',
+    'SKIP_DOWNLOAD': 'info',
     'DOWNLOADING': 'primary',
     'PENDING': 'info'
   }
@@ -338,8 +375,9 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const map = {
     'SUCCESS_DOWNLOAD': '已完成',
-    'FAILED_DOWNLOAD': '失败',
+    'FAILED_DOWNLOAD': '下载失败',
     'PAUSED': '已暂停',
+    'SKIP_DOWNLOAD': '已跳过',
     'DOWNLOADING': '下载中',
     'PENDING': '等待中'
   }
@@ -351,10 +389,16 @@ const canPause = (row) => {
   return row.isRunning && row.status === 'DOWNLOADING'
 }
 
-// 判断是否可以继续
+// 判断是否可以继续/重试
 const canResume = (row) => {
-  return row.status === 'PAUSED' ||
-         (!row.isRunning && row.status !== 'SUCCESS_DOWNLOAD' && row.status !== 'SKIP_DOWNLOAD')
+  return row.status === 'PAUSED' || 
+         row.status === 'PENDING' ||
+         row.status === 'FAILED_DOWNLOAD'
+}
+
+// 判断是否可以重试（失败任务）
+const canRetry = (row) => {
+  return row.status === 'FAILED_DOWNLOAD'
 }
 
 // 刷新列表
@@ -367,7 +411,10 @@ const refreshList = async () => {
     // 更新选项卡计数
     tabCounts.downloadingCount = res.downloadingCount || 0
     tabCounts.waitingCount = res.waitingCount || 0
+    tabCounts.pausedCount = res.pausedCount || 0
+    tabCounts.skippedCount = res.skippedCount || 0
     tabCounts.completedCount = res.completedCount || 0
+    tabCounts.failedCount = res.failedCount || 0
   } catch (error) {
     ElMessage.error('刷新失败')
   } finally {

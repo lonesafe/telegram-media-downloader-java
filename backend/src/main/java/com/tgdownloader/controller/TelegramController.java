@@ -1,18 +1,21 @@
 package com.tgdownloader.controller;
 
 import com.tgdownloader.dto.ApiResponse;
+import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.entity.TelegramConfig;
 import com.tgdownloader.repository.TelegramConfigRepository;
 import com.tgdownloader.service.BotClientService;
+import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.SavedMessagesService;
 import com.tgdownloader.service.TelegramClientService;
+import com.tgdownloader.util.TelegramUtils;
+import it.tdlight.jni.TdApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -35,6 +38,12 @@ public class TelegramController {
 
     @Autowired
     private SavedMessagesService savedMessagesService;
+
+    @Autowired
+    private TelegramUtils telegramUtils;
+
+    @Autowired
+    private DownloadCoreService downloadCoreService;
 
     @GetMapping("/config")
     public ApiResponse<TelegramConfig> getConfig() {
@@ -84,6 +93,11 @@ public class TelegramController {
         boolean nowEnabled = config.getSavedMessagesEnabled() != null && config.getSavedMessagesEnabled();
 
         TelegramConfig saved = telegramConfigRepository.save(existing);
+
+        // 并发数变更时动态调整线程池
+        if (saved.getMaxConcurrentTasks() != null) {
+            downloadCoreService.updateConcurrency(saved.getMaxConcurrentTasks());
+        }
 
         if (!wasEnabled && nowEnabled) {
             log.info("启用收藏夹扫秒..");
@@ -207,8 +221,6 @@ public class TelegramController {
         return ApiResponse.success(state);
     }
 
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
     @GetMapping("/chats")
     public ApiResponse<Map<String, Object>> getChats(@RequestParam String chatId) {
         try {
@@ -226,9 +238,7 @@ public class TelegramController {
             @RequestParam(defaultValue = "0") long offset,
             @RequestParam(defaultValue = "50") int limit) {
         try {
-            // TODO: 实现 getMessages
-            Map<String, Object> result = new HashMap<>();
-            result.put("messages", List.of());
+            Map<String, Object> result = telegramClientService.getMessages(Long.parseLong(chatId), offset, limit);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("获取消息失败: {}", e.getMessage());
@@ -237,17 +247,21 @@ public class TelegramController {
     }
 
     @PostMapping("/download")
-    public ApiResponse<Map<String, Object>> downloadMedia(
-            @RequestParam String link,
-            @RequestParam(required = false) String filePath) {
+    public ApiResponse<Map<String, Object>> downloadMedia(@RequestParam String link) {
         try {
-            String path = telegramClientService.downloadMediaByLink(link,null);
-            Map<String, Object> result = new HashMap<>();
-            result.put("filePath", path);
-            return ApiResponse.success(result);
+            TdApi.Message msg = telegramClientService.getMessageByLink(link);
+            if (msg == null) return ApiResponse.error("消息不存在");
+            DownloadTask task = telegramUtils.buildTask(null, msg);
+            if (task == null) return ApiResponse.error("该消息类型不在下载类型配置中，或无法解析媒体文件");
+            downloadCoreService.startDownload(task);
+            return ApiResponse.success(Map.of(
+                    "taskId", task.getId(),
+                    "messageId", msg.id,
+                    "status", task.getStatus(),
+                    "fileName", task.getFileName() != null ? task.getFileName() : ""));
         } catch (Exception e) {
-            log.error("下载失败: {}", e.getMessage());
-            return ApiResponse.error("下载失败: " + e.getMessage());
+            log.error("加入下载队列失败: {}", e.getMessage());
+            return ApiResponse.error("加入下载队列失败: " + e.getMessage());
         }
     }
 
@@ -264,7 +278,8 @@ public class TelegramController {
             return ApiResponse.error("转发失败: " + e.getMessage());
         }
     }
-    */
+
+
 
     @GetMapping("/bot/status")
     public ApiResponse<Map<String, Object>> getBotStatus() {
@@ -301,6 +316,32 @@ public class TelegramController {
             return ApiResponse.success("Bot 已断开连接");
         } catch (Exception e) {
             return ApiResponse.error("Bot 断开连接失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/bot/info")
+    public ApiResponse<Map<String, Object>> getBotInfo() {
+        try {
+            Map<String, Object> info = botClientService.getBotInfo();
+            return ApiResponse.success(info);
+        } catch (Exception e) {
+            log.error("获取Bot信息失败: {}", e.getMessage());
+            return ApiResponse.error("获取Bot信息失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/bot/check-token")
+    public ApiResponse<Map<String, Object>> checkBotToken(@RequestBody Map<String, String> body) {
+        try {
+            String token = body.get("token");
+            if (token == null || token.isEmpty()) {
+                return ApiResponse.error("Token 不能为空");
+            }
+            Map<String, Object> result = botClientService.checkToken(token);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.error("验证Token失败: {}", e.getMessage());
+            return ApiResponse.error("验证Token失败: " + e.getMessage());
         }
     }
 }

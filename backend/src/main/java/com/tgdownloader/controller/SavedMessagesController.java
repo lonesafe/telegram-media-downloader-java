@@ -6,6 +6,7 @@ import com.tgdownloader.model.DownloadStatus;
 import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.SavedMessagesService;
 import com.tgdownloader.service.TelegramClientService;
+import com.tgdownloader.util.TelegramUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 收藏夹控制器
@@ -32,18 +32,9 @@ public class SavedMessagesController {
     private DownloadCoreService downloadCore;
     @Autowired
     private TelegramClientService telegramClient;
+    @Autowired
+    private TelegramUtils telegramUtils;
 
-
-    // ===== 以下方法前端未使用，已注释 =====
-    /*
-    @PostMapping("/stop-monitoring")
-    public ApiResponse<String> stop() {
-        if (!savedMessages.getMonitoring().compareAndSet(true, false)) return ApiResponse.success("未在运行");
-        log.info("收藏夹监听已停止");
-        return ApiResponse.success("已停止");
-    }
-    */
-    // 注意：start() 方法被 AutoLoginInitializer 主动调用以实现启动时自动启用监控，不能注释
 
     @PostMapping("/start-monitoring")
     public ApiResponse<String> start() {
@@ -121,7 +112,8 @@ public class SavedMessagesController {
         savedMessages.getTaskRepo().findById(id).ifPresent(t -> {
             t.setIsStopTransmission(true);
             t.setStatus(DownloadStatus.PAUSED.name());
-            savedMessages.getTaskRepo().save(t);
+            t.setFinishedAt(java.time.LocalDateTime.now());
+            telegramUtils.saveTask(t);
         });
         return ApiResponse.success("已暂停");
     }
@@ -131,7 +123,7 @@ public class SavedMessagesController {
         savedMessages.getTaskRepo().findById(id).ifPresent(t -> {
             t.setIsStopTransmission(false);
             t.setStatus(DownloadStatus.PENDING.name());
-            savedMessages.getTaskRepo().save(t);
+            t.setFinishedAt(null);
             downloadCore.startDownload(t);
         });
         return ApiResponse.success("已继续");

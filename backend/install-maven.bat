@@ -1,9 +1,0 @@
-@echo off
-echo Downloading Maven 3.9.6...
-curl -L -o %TEMP%\maven.zip https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.zip
-echo Extracting...
-powershell -Command "Expand-Archive -Path '%TEMP%\maven.zip' -DestinationPath 'C:\Program Files\' -Force"
-echo Adding to PATH...
-set PATH=%ProgramFiles%\apache-maven-3.9.6\bin;%PATH%
-echo Verifying Maven:
-mvn --version
