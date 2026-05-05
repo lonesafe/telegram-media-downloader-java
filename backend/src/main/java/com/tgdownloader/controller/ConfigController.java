@@ -4,8 +4,8 @@ import com.tgdownloader.dto.ApiResponse;
 import com.tgdownloader.dto.ChatConfigDto;
 import com.tgdownloader.entity.ChatConfig;
 import com.tgdownloader.entity.TelegramConfig;
-import com.tgdownloader.repository.ChatConfigRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.ChatConfigMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -21,13 +21,13 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/config")
 public class ConfigController {
 
-    private final TelegramConfigRepository telegramConfigRepository;
-    private final ChatConfigRepository chatConfigRepository;
+    private final TelegramConfigMapper telegramConfigMapper;
+    private final ChatConfigMapper chatConfigMapper;
 
-    public ConfigController(TelegramConfigRepository telegramConfigRepository,
-                            ChatConfigRepository chatConfigRepository) {
-        this.telegramConfigRepository = telegramConfigRepository;
-        this.chatConfigRepository = chatConfigRepository;
+    public ConfigController(TelegramConfigMapper telegramConfigMapper,
+                            ChatConfigMapper chatConfigMapper) {
+        this.telegramConfigMapper = telegramConfigMapper;
+        this.chatConfigMapper = chatConfigMapper;
     }
 
     private TelegramConfig createDefaultConfig() {
@@ -38,7 +38,7 @@ public class ConfigController {
 
     @GetMapping
     public ApiResponse<TelegramConfig> getConfig() {
-        TelegramConfig config = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig config = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(() -> {
                     TelegramConfig cfg = new TelegramConfig();
                     cfg.setConfigName("default");
@@ -51,7 +51,7 @@ public class ConfigController {
 
     @PutMapping
     public ApiResponse<TelegramConfig> updateConfig(@RequestBody TelegramConfig config) {
-        TelegramConfig existing = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig existing = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(this::createDefaultConfig);
 
         if (config.getApiId() != null) existing.setApiId(config.getApiId());
@@ -66,12 +66,12 @@ public class ConfigController {
         if (config.getMaxConcurrentTasks() != null) existing.setMaxConcurrentTasks(config.getMaxConcurrentTasks());
         if (config.getDownloadTypes() != null) existing.setDownloadTypes(config.getDownloadTypes());
 
-        return ApiResponse.success(telegramConfigRepository.save(existing));
+        return ApiResponse.success(telegramConfigMapper.save(existing));
     }
 
     @GetMapping("/chats")
     public ApiResponse<List<ChatConfigDto>> getChats() {
-        List<ChatConfigDto> dtos = chatConfigRepository.findAll().stream()
+        List<ChatConfigDto> dtos = chatConfigMapper.findAll().stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
         return ApiResponse.success(dtos);
@@ -81,26 +81,26 @@ public class ConfigController {
     public ApiResponse<ChatConfigDto> addChat(@RequestBody ChatConfigDto dto) {
         ChatConfig entity = toEntity(dto);
         entity.setId(null);
-        return ApiResponse.success(toDto(chatConfigRepository.save(entity)));
+        return ApiResponse.success(toDto(chatConfigMapper.save(entity)));
     }
 
     @PutMapping("/chats/{id}")
     public ApiResponse<ChatConfigDto> updateChat(@PathVariable Long id, @RequestBody ChatConfigDto dto) {
-        ChatConfig existing = chatConfigRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Chat not found: " + id));
+        ChatConfig existing = chatConfigMapper.findById(id);
+        if (existing == null) throw new RuntimeException("Chat not found: " + id);
         BeanUtils.copyProperties(dto, existing, "id", "createdAt");
-        return ApiResponse.success(toDto(chatConfigRepository.save(existing)));
+        return ApiResponse.success(toDto(chatConfigMapper.save(existing)));
     }
 
     @DeleteMapping("/chats/{id}")
     public ApiResponse<Void> deleteChat(@PathVariable Long id) {
-        chatConfigRepository.deleteById(id);
+        chatConfigMapper.deleteById(id);
         return ApiResponse.success();
     }
 
     @GetMapping("/proxy")
     public ApiResponse<Map<String, Object>> getProxy() {
-        TelegramConfig c = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig c = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(this::createDefaultConfig);
         return ApiResponse.success(Map.of(
             "enabled",   c.getProxyEnabled() != null && c.getProxyEnabled(),
@@ -114,7 +114,7 @@ public class ConfigController {
 
     @PutMapping("/proxy")
     public ApiResponse<Map<String, Object>> updateProxy(@RequestBody Map<String, Object> p) {
-        TelegramConfig c = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig c = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(this::createDefaultConfig);
 
         if (p.containsKey("enabled"))   c.setProxyEnabled((Boolean) p.get("enabled"));
@@ -124,13 +124,13 @@ public class ConfigController {
         if (p.containsKey("username"))  c.setProxyUsername((String) p.get("username"));
         if (p.containsKey("password"))  c.setProxyPassword((String) p.get("password"));
 
-        telegramConfigRepository.save(c);
+        telegramConfigMapper.save(c);
         return ApiResponse.success(p);
     }
 
     @GetMapping("/cloud")
     public ApiResponse<Map<String, Object>> getCloudConfig() {
-        TelegramConfig c = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig c = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(this::createDefaultConfig);
         return ApiResponse.success(Map.of(
             "enableUploadFile",     c.getEnableUploadFile() != null && c.getEnableUploadFile(),
@@ -144,7 +144,7 @@ public class ConfigController {
 
     @PutMapping("/cloud")
     public ApiResponse<Map<String, Object>> updateCloudConfig(@RequestBody Map<String, Object> c) {
-        TelegramConfig cfg = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig cfg = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(this::createDefaultConfig);
 
         if (c.containsKey("enableUploadFile"))     cfg.setEnableUploadFile((Boolean) c.get("enableUploadFile"));
@@ -154,7 +154,7 @@ public class ConfigController {
         if (c.containsKey("beforeUploadFileZip"))  cfg.setBeforeUploadFileZip((Boolean) c.get("beforeUploadFileZip"));
         if (c.containsKey("afterUploadFileDelete"))cfg.setAfterUploadFileDelete((Boolean) c.get("afterUploadFileDelete"));
 
-        telegramConfigRepository.save(cfg);
+        telegramConfigMapper.save(cfg);
         return ApiResponse.success(c);
     }
 

@@ -2,19 +2,21 @@ package com.tgdownloader.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mybatisflex.core.paginate.Page;
+import com.mybatisflex.core.query.QueryWrapper;
 import com.tgdownloader.entity.ForwardTask;
-import com.tgdownloader.repository.ForwardTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.entity.TelegramConfig;
+import com.tgdownloader.mapper.ForwardTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import it.tdlight.jni.TdApi;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -31,9 +33,11 @@ public class ForwardService {
     private static final Logger log = LoggerFactory.getLogger(ForwardService.class);
 
     @Autowired
-    private ForwardTaskRepository taskRepo;
+    private ForwardTaskMapper taskMapper;
+
     @Autowired
-    private TelegramConfigRepository configRepo;
+    private TelegramConfigMapper configMapper;
+
     @Autowired
     @Lazy
     private TelegramClientService telegramClient;
@@ -45,7 +49,6 @@ public class ForwardService {
             r -> new Thread(r, "ForwardWorker-" + System.nanoTime()),
             new ThreadPoolExecutor.CallerRunsPolicy());
 
-    // --- 转发监听状态 ---
     private final Set<Long> sourceChatIds = ConcurrentHashMap.newKeySet();
     private volatile Long targetChatId = null;
     private final AtomicBoolean listening = new AtomicBoolean(false);
@@ -64,15 +67,14 @@ public class ForwardService {
 
     public void startListening() {
         if (!listening.compareAndSet(false, true)) return;
-        var cfg = configRepo.findByConfigName("default").orElse(null);
+        TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
         if (cfg == null || !Boolean.TRUE.equals(cfg.getForwardListenerEnabled())) {
             log.info("转发监听未启用");
             listening.set(false);
             return;
         }
         try {
-            var ids = json.readValue(cfg.getForwardListenerSourceChatIds(), new TypeReference<List<Long>>() {
-            });
+            var ids = json.readValue(cfg.getForwardListenerSourceChatIds(), new TypeReference<List<Long>>() {});
             sourceChatIds.clear();
             sourceChatIds.addAll(ids);
             targetChatId = cfg.getForwardListenerTargetChatId();
@@ -97,21 +99,12 @@ public class ForwardService {
         log.info("转发监听已停止");
     }
 
-    public boolean isListening() {
-        return listening.get();
-    }
+    public boolean isListening() { return listening.get(); }
 
-    public Set<Long> getSourceChatIds() {
-        return Set.copyOf(sourceChatIds);
-    }
+    public Set<Long> getSourceChatIds() { return Set.copyOf(sourceChatIds); }
 
-    public Long getTargetChatId() {
-        return targetChatId;
-    }
+    public Long getTargetChatId() { return targetChatId; }
 
-    /**
-     * TDLib 新消息回调（由 TelegramClientService 调用）
-     */
     public void onNewMessage(TdApi.Message msg) {
         if (!listening.get()) return;
         if (msg.isOutgoing) return;
@@ -122,15 +115,17 @@ public class ForwardService {
 
     // ==================== 转发任务 ====================
 
-    @Transactional
     public ForwardTask createTask(long srcChat, long msgId, long dstChat, boolean isAuto) {
-        if (taskRepo.existsBySourceChatIdAndMessageIdAndTargetChatId(srcChat, msgId, dstChat)) {
+        if (taskMapper.existsBySourceChatIdAndMessageIdAndTargetChatId(srcChat, msgId, dstChat)) {
             log.debug("转发任务已存在");
             return null;
         }
-        ForwardTask task = ForwardTask.builder()
-                .sourceChatId(srcChat).messageId(msgId).targetChatId(dstChat)
-                .status("PENDING").isAutoForward(isAuto).build();
+        ForwardTask task = new ForwardTask();
+        task.setSourceChatId(srcChat);
+        task.setMessageId(msgId);
+        task.setTargetChatId(dstChat);
+        task.setStatus("PENDING");
+        task.setIsAutoForward(isAuto);
         try {
             var src = telegramClient.getChatSync(srcChat);
             if (src != null) task.setSourceChatTitle(src.title);
@@ -139,20 +134,20 @@ public class ForwardService {
         } catch (Exception e) {
             log.warn("获取聊天标题失败: {}", e.getMessage());
         }
-        return taskRepo.save(task);
+        taskMapper.insertSelective(task);
+        return task;
     }
 
     private ForwardTask createAutoTask(long srcChat, long msgId, long dstChat) {
         return createTask(srcChat, msgId, dstChat, true);
     }
 
-    @Transactional
     public ForwardTask executeTask(Long taskId) {
-        var task = taskRepo.findById(taskId).orElse(null);
+        ForwardTask task = taskMapper.selectById(taskId);
         if (task == null) return null;
         if ("SUCCESS".equals(task.getStatus()) || "FAILED".equals(task.getStatus())) return task;
         task.setStatus("FORWARDING");
-        taskRepo.save(task);
+        taskMapper.update(task);
         try {
             telegramClient.forwardMessageSync(task.getSourceChatId(), task.getMessageId(), task.getTargetChatId());
             task.setStatus("SUCCESS");
@@ -163,49 +158,58 @@ public class ForwardService {
             task.setErrorMessage(e.getMessage());
             log.error("转发失败: {}", e.getMessage());
         }
-        return taskRepo.save(task);
+        taskMapper.update(task);
+        return task;
     }
 
     public void processPending() {
-        if (!telegramClient.isConnected()) return;
-        var pending = taskRepo.findByStatusIn(List.of("PENDING", "FORWARDING"));
+        if (telegramClient == null || !telegramClient.isConnected()) return;
+        List<ForwardTask> pending = taskMapper.selectAll().stream()
+                .filter(t -> List.of("PENDING", "FORWARDING").contains(t.getStatus()))
+                .toList();
         pending.forEach(t -> executor.submit(() -> executeTask(t.getId())));
         if (!pending.isEmpty()) log.info("处理 {} 个待转发任务", pending.size());
     }
 
-    @Transactional
     public void retryTask(Long taskId) {
-        taskRepo.findById(taskId).ifPresent(task -> {
+        ForwardTask task = taskMapper.selectById(taskId);
+        if (task != null) {
             task.setStatus("PENDING");
             task.setErrorMessage(null);
-            taskRepo.save(task);
+            taskMapper.update(task);
             executor.submit(() -> executeTask(taskId));
-        });
+        }
     }
 
-    @Transactional
     public void stopTask(Long taskId) {
-        taskRepo.findById(taskId).ifPresent(task -> {
+        ForwardTask task = taskMapper.selectById(taskId);
+        if (task != null) {
             task.setStatus("STOPPED");
-            taskRepo.save(task);
-        });
+            taskMapper.update(task);
+        }
     }
 
     // ==================== 查询 ====================
 
-    public Page<ForwardTask> list(Pageable p) {
-        return taskRepo.findAll(p);
+    public Map<String, Object> list(Pageable p) {
+        org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(p.getPageNumber(), p.getPageSize());
+        com.mybatisflex.core.paginate.Page<ForwardTask> page = taskMapper.findAll(pageRequest);
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("tasks", page.getRecords());
+        result.put("total", page.getTotalRow());
+        result.put("pages", (page.getTotalRow() + p.getPageSize() - 1) / p.getPageSize());
+        return result;
     }
 
     public Map<String, Long> stats() {
         return Map.of(
-                "total", taskRepo.count(),
-                "pending", taskRepo.countByStatus("PENDING"),
-                "success", taskRepo.countByStatus("SUCCESS"),
-                "failed", taskRepo.countByStatus("FAILED"));
+                "total", (long) taskMapper.selectCount(),
+                "pending", taskMapper.countByStatus("PENDING"),
+                "success", taskMapper.countByStatus("SUCCESS"),
+                "failed", taskMapper.countByStatus("FAILED"));
     }
 
     public long countByStatus(String s) {
-        return taskRepo.countByStatus(s);
+        return taskMapper.countByStatus(s);
     }
 }

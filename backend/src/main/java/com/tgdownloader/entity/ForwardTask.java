@@ -1,56 +1,53 @@
 package com.tgdownloader.entity;
 
-import jakarta.persistence.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import com.mybatisflex.annotation.Column;
+import com.mybatisflex.annotation.Id;
+import com.mybatisflex.annotation.KeyType;
+import com.mybatisflex.annotation.Table;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
 
 /**
- * 转发任务实体 - 无 Lombok 版本
+ * 转发任务实体
  */
-@Entity
-@Table(name = "forward_task")
+@Table("forward_task")
 public class ForwardTask {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id(keyType = KeyType.Auto)
     private Long id;
 
-    @Column(name = "source_chat_id", nullable = false)
+    @Column("source_chat_id")
     private Long sourceChatId;
 
-    @Column(name = "source_chat_title")
+    @Column("source_chat_title")
     private String sourceChatTitle;
 
-    @Column(name = "message_id", nullable = false)
+    @Column("message_id")
     private Long messageId;
 
-    @Column(name = "target_chat_id", nullable = false)
+    @Column("target_chat_id")
     private Long targetChatId;
 
-    @Column(name = "target_chat_title")
+    @Column("target_chat_title")
     private String targetChatTitle;
 
-    @Column(name = "status", nullable = false)
-    private String status = "PENDING"; // PENDING, FORWARDING, SUCCESS, FAILED, SKIP
+    @Column("status")
+    private String status = "PENDING";
 
-    @Column(name = "error_message")
+    @Column("error_message")
     private String errorMessage;
 
-    @Column(name = "is_auto_forward")
-    private Boolean isAutoForward = false; // true = 监听自动触发, false = 用户手动提交
+    @Column("is_auto_forward")
+    private Boolean isAutoForward = false;
 
-    @Column(name = "created_at", updatable = false)
-    @CreationTimestamp
+    @Column("created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
-    @UpdateTimestamp
+    @Column("updated_at")
     private LocalDateTime updatedAt;
 
-    // --- getters ---
+    // ── getters / setters ────────────────────────────────────────────────────
     public Long getId() { return id; }
     public Long getSourceChatId() { return sourceChatId; }
     public String getSourceChatTitle() { return sourceChatTitle; }
@@ -63,7 +60,6 @@ public class ForwardTask {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 
-    // --- setters ---
     public void setId(Long id) { this.id = id; }
     public void setSourceChatId(Long sourceChatId) { this.sourceChatId = sourceChatId; }
     public void setSourceChatTitle(String sourceChatTitle) { this.sourceChatTitle = sourceChatTitle; }
@@ -76,33 +72,14 @@ public class ForwardTask {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
-    @Override
-    public String toString() { return "ForwardTask{id=" + id + ", sourceChatId=" + sourceChatId + ", messageId=" + messageId + ", status=" + status + "}"; }
+    @Override public String toString() { return "ForwardTask{id=" + id + ", status=" + status + "}"; }
 
-    @Override
-    public boolean equals(Object o) {
+    @Override public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ForwardTask that = (ForwardTask) o;
         return id != null && Objects.equals(id, that.id);
     }
 
-    @Override
-    public int hashCode() { return getClass().hashCode(); }
-
-    public static Builder builder() { return new Builder(); }
-
-    public static class Builder {
-        private final ForwardTask t = new ForwardTask();
-        public Builder id(Long v) { t.setId(v); return this; }
-        public Builder sourceChatId(Long v) { t.setSourceChatId(v); return this; }
-        public Builder sourceChatTitle(String v) { t.setSourceChatTitle(v); return this; }
-        public Builder messageId(Long v) { t.setMessageId(v); return this; }
-        public Builder targetChatId(Long v) { t.setTargetChatId(v); return this; }
-        public Builder targetChatTitle(String v) { t.setTargetChatTitle(v); return this; }
-        public Builder status(String v) { t.setStatus(v); return this; }
-        public Builder errorMessage(String v) { t.setErrorMessage(v); return this; }
-        public Builder isAutoForward(Boolean v) { t.setIsAutoForward(v); return this; }
-        public ForwardTask build() { return t; }
-    }
+    @Override public int hashCode() { return getClass().hashCode(); }
 }

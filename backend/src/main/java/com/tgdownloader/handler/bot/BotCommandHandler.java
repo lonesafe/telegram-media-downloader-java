@@ -3,9 +3,9 @@ package com.tgdownloader.handler.bot;
 import com.tgdownloader.entity.ChatConfig;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.model.DownloadStatus;
-import com.tgdownloader.repository.ChatConfigRepository;
-import com.tgdownloader.repository.DownloadTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.ChatConfigMapper;
+import com.tgdownloader.mapper.DownloadTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.TelegramClientService;
 import com.tgdownloader.util.TelegramUtils;
@@ -33,11 +33,11 @@ public class BotCommandHandler {
     private static final Logger log = LoggerFactory.getLogger(BotCommandHandler.class);
 
     @Autowired
-    private ChatConfigRepository chatConfigRepository;
+    private ChatConfigMapper chatConfigMapper;
     @Autowired
-    private DownloadTaskRepository downloadTaskRepository;
+    private DownloadTaskMapper downloadTaskMapper;
     @Autowired
-    private TelegramConfigRepository configRepository;
+    private TelegramConfigMapper configMapper;
     @Autowired
     @Lazy
     private DownloadCoreService downloadCoreService;
@@ -115,12 +115,12 @@ public class BotCommandHandler {
                         sendTextMessage(chatId, "解析链接失败，请确保 Bot 有权限访问该群组");
                         return;
                     }
-                    ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(msg.chatId))
+                    ChatConfig cfg = chatConfigMapper.findByChatId(String.valueOf(msg.chatId))
                             .orElseGet(() -> {
                                 ChatConfig c = new ChatConfig();
                                 c.setChatId(String.valueOf(msg.chatId));
                                 c.setEnabled(true);
-                                return chatConfigRepository.save(c);
+                                return chatConfigMapper.save(c);
                             });
                     DownloadTask task = telegramUtils.buildTask(cfg, msg);
                     if (task == null) {
@@ -143,12 +143,12 @@ public class BotCommandHandler {
                         try {
                             TdApi.Message msg = resolveMessageFromLink(baseUrl + "/" + id);
                             if (msg != null) {
-                                ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(msg.chatId))
+                                ChatConfig cfg = chatConfigMapper.findByChatId(String.valueOf(msg.chatId))
                                     .orElseGet(() -> {
                                         ChatConfig c = new ChatConfig();
                                         c.setChatId(String.valueOf(msg.chatId));
                                         c.setEnabled(true);
-                                        return chatConfigRepository.save(c);
+                                        return chatConfigMapper.save(c);
                                     });
                                 DownloadTask task = telegramUtils.buildTask(cfg, msg);
                                 if (task != null) {
@@ -286,10 +286,10 @@ public class BotCommandHandler {
 
     // ========== /status ==========
     private void cmdStatus(long chatId) {
-        int running = (int) downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
+        int running = (int) downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
         String botStatus = botClient != null ? "在线" : "离线";
         sendTextMessage(chatId, String.format("Bot: %s\n下载中: %d\n监听任务: %d\n配置群组: %d\n语言: %s",
-                botStatus, running, listenTasks.size(), chatConfigRepository.count(), language));
+                botStatus, running, listenTasks.size(), chatConfigMapper.countAll(), language));
     }
 
     // ========== /set_chat ==========
@@ -303,19 +303,19 @@ public class BotCommandHandler {
             sendTextMessage(chatId, "无法解析 Chat ID，请检查输入");
             return;
         }
-        ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(targetId))
+        ChatConfig cfg = chatConfigMapper.findByChatId(String.valueOf(targetId))
                 .orElseGet(() -> {
                     ChatConfig c = new ChatConfig();
                     c.setChatId(String.valueOf(targetId));
                     c.setEnabled(true);
-                    return chatConfigRepository.save(c);
+                    return chatConfigMapper.save(c);
                 });
         sendTextMessage(chatId, "已设置当前群组: " + targetId + "\n标题: " + nvl(cfg.getTitle(), "(无)"));
     }
 
     // ========== /list_chats ==========
     private void cmdListChats(long chatId) {
-        List<ChatConfig> all = chatConfigRepository.findAll();
+        List<ChatConfig> all = chatConfigMapper.findAll();
         if (all.isEmpty()) {
             sendTextMessage(chatId, "还没有配置任何群组，请先使用 /set_chat 设置");
             return;
@@ -339,9 +339,9 @@ public class BotCommandHandler {
             return;
         }
         language = lang;
-        configRepository.findByConfigName("default").ifPresent(cfg -> {
+        configMapper.findByConfigName("default").ifPresent(cfg -> {
             cfg.setLanguageCode(lang);
-            configRepository.save(cfg);
+            configMapper.save(cfg);
         });
         sendTextMessage(chatId, "语言已设置为: " + (lang.equals("zh") ? "中文" : "English"));
     }
@@ -357,13 +357,13 @@ public class BotCommandHandler {
             sendTextMessage(chatId, "无效的过滤器: " + filter + "\n可用: ALL, PHOTO, VIDEO, DOCUMENT, AUDIO");
             return;
         }
-        ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(chatId)).orElseGet(() -> {
+        ChatConfig cfg = chatConfigMapper.findByChatId(String.valueOf(chatId)).orElseGet(() -> {
             ChatConfig c = new ChatConfig();
             c.setChatId(String.valueOf(chatId));
             return c;
         });
         cfg.setFilterType(filter);
-        chatConfigRepository.save(cfg);
+        chatConfigMapper.save(cfg);
         sendTextMessage(chatId, "已更新过滤器为: " + filter);
     }
 
@@ -391,12 +391,12 @@ public class BotCommandHandler {
                 sendTextMessage(chatId, "解析链接失败");
                 return;
             }
-            ChatConfig cfg = chatConfigRepository.findByChatId(String.valueOf(msg.chatId))
+            ChatConfig cfg = chatConfigMapper.findByChatId(String.valueOf(msg.chatId))
                     .orElseGet(() -> {
                         ChatConfig c = new ChatConfig();
                         c.setChatId(String.valueOf(msg.chatId));
                         c.setEnabled(true);
-                        return chatConfigRepository.save(c);
+                        return chatConfigMapper.save(c);
                     });
             DownloadTask task = telegramUtils.buildTask(cfg, msg);
             if (task == null) {

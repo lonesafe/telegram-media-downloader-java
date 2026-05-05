@@ -1,10 +1,11 @@
 package com.tgdownloader.service;
 
 import com.tgdownloader.entity.DownloadTask;
+import com.tgdownloader.entity.TelegramConfig;
+import com.tgdownloader.mapper.ChatConfigMapper;
+import com.tgdownloader.mapper.DownloadTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.model.DownloadStatus;
-import com.tgdownloader.repository.ChatConfigRepository;
-import com.tgdownloader.repository.DownloadTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
 import com.tgdownloader.util.TelegramUtils;
 import it.tdlight.jni.TdApi;
 import lombok.Data;
@@ -14,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,17 +28,19 @@ public class SavedMessagesService {
     @Autowired
     private TelegramClientService telegramClient;
     @Autowired
-    private DownloadTaskRepository taskRepo;
+    private DownloadTaskMapper taskMapper;
     @Autowired
-    private ChatConfigRepository chatConfigRepo;
+    private ChatConfigMapper chatConfigMapper;
     @Autowired
-    private TelegramConfigRepository configRepo;
+    private TelegramConfigMapper configMapper;
     @Autowired
     private TelegramUtils telegramUtils;
 
     private static final int BATCH = 100;
     // 内部状态（监听开关）
     private final AtomicBoolean monitoring = new AtomicBoolean(false);
+
+    public DownloadTaskMapper getTaskRepo() { return taskMapper; }
 
     @Transactional
     public int scanAll(long fromMsgId) {
@@ -70,7 +72,7 @@ public class SavedMessagesService {
 
             for (TdApi.Message msg : messages) {
                 if (!hasMedia(msg)) continue;
-                if (taskRepo.existsByChatIdAndMessageId(String.valueOf(msg.chatId), msg.id)) {
+                if (taskMapper.existsByChatIdAndMessageId(String.valueOf(msg.chatId), msg.id)) {
                     continue;
                 }
                 createTask(msg);
@@ -92,7 +94,7 @@ public class SavedMessagesService {
         // 检查媒体类型是否在配置的下载类型中
         String downloadTypes = null;
         try {
-            var cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg != null) {
                 downloadTypes = cfg.getDownloadTypes();
             }
@@ -113,7 +115,10 @@ public class SavedMessagesService {
     }
 
     private void startPending() {
-        for (DownloadTask t : taskRepo.findByStatusIn(List.of(DownloadStatus.DOWNLOADING.name(), DownloadStatus.PENDING.name(), DownloadStatus.PAUSED.name()))) {
+        List<DownloadTask> tasks = taskMapper.selectAll().stream()
+                .filter(t -> List.of(DownloadStatus.DOWNLOADING.name(), DownloadStatus.PENDING.name(), DownloadStatus.PAUSED.name()).contains(t.getStatus()))
+                .toList();
+        for (DownloadTask t : tasks) {
             if (!DownloadStatus.DOWNLOADING.name().equals(t.getStatus()) && !Boolean.TRUE.equals(t.getIsStopTransmission())) {
                 downloadCore.startDownload(t);
             }
@@ -130,14 +135,14 @@ public class SavedMessagesService {
         if (!monitoring.get() || topic == null || topic.lastMessage == null) return;
         log.info("收到 SavedMessagesTopicUpdate: topicId={}, lastMessageId={}", topic.id, topic.lastMessage.id);
         TdApi.Message msg = topic.lastMessage;
-        if (hasMedia(msg) && !taskRepo.existsByChatIdAndMessageId(String.valueOf(msg.chatId), msg.id)) {
+        if (hasMedia(msg) && !taskMapper.existsByChatIdAndMessageId(String.valueOf(msg.chatId), msg.id)) {
             createTask(msg);
             startPending();
         }
     }
 
     public void performInitScan() {
-        var cfg = configRepo.findByConfigName("default").orElse(null);
+        TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
         if (cfg == null || !Boolean.TRUE.equals(cfg.getSavedMessagesEnabled())) return;
         int found = scanAll(0);
         log.info("收藏夹初始扫描完成，创建 {} 个任务，触发下载队列", found);

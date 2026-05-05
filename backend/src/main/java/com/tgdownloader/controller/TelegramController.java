@@ -3,7 +3,7 @@ package com.tgdownloader.controller;
 import com.tgdownloader.dto.ApiResponse;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.entity.TelegramConfig;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.service.BotClientService;
 import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.SavedMessagesService;
@@ -28,7 +28,7 @@ public class TelegramController {
     private static final Logger log = LoggerFactory.getLogger(TelegramController.class);
 
     @Autowired
-    private TelegramConfigRepository telegramConfigRepository;
+    private TelegramConfigMapper telegramConfigMapper;
 
     @Autowired
     private TelegramClientService telegramClientService;
@@ -47,18 +47,18 @@ public class TelegramController {
 
     @GetMapping("/config")
     public ApiResponse<TelegramConfig> getConfig() {
-        TelegramConfig config = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig config = telegramConfigMapper.findByConfigName("default")
                 .orElseGet(() -> {
                     TelegramConfig newConfig = new TelegramConfig();
                     newConfig.setConfigName("default");
-                    return telegramConfigRepository.save(newConfig);
+                    return telegramConfigMapper.save(newConfig);
                 });
         return ApiResponse.success(config);
     }
 
     @PostMapping("/config")
     public ApiResponse<TelegramConfig> saveConfig(@RequestBody TelegramConfig config) {
-        TelegramConfig existing = telegramConfigRepository.findByConfigName("default")
+        TelegramConfig existing = telegramConfigMapper.findByConfigName("default")
                 .orElse(new TelegramConfig());
 
         existing.setConfigName("default");
@@ -92,7 +92,7 @@ public class TelegramController {
         boolean wasEnabled = existing.getSavedMessagesEnabled() != null && existing.getSavedMessagesEnabled();
         boolean nowEnabled = config.getSavedMessagesEnabled() != null && config.getSavedMessagesEnabled();
 
-        TelegramConfig saved = telegramConfigRepository.save(existing);
+        TelegramConfig saved = telegramConfigMapper.save(existing);
 
         // 并发数变更时动态调整线程池
         if (saved.getMaxConcurrentTasks() != null) {
@@ -293,7 +293,7 @@ public class TelegramController {
         try {
             String token = body != null ? body.get("token") : null;
             if (token == null || token.isEmpty()) {
-                TelegramConfig config = telegramConfigRepository.findByConfigName("default").orElse(null);
+                TelegramConfig config = telegramConfigMapper.findByConfigName("default").orElse(null);
                 if (config != null) {
                     token = config.getBotToken();
                 }

@@ -1,7 +1,7 @@
 package com.tgdownloader.service;
 
 import com.tgdownloader.entity.TelegramConfig;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.util.TelegramUtils;
 import it.tdlight.client.*;
 import it.tdlight.jni.TdApi;
@@ -41,7 +41,7 @@ public class TelegramClientService {
     private static final Logger log = LoggerFactory.getLogger(TelegramClientService.class);
 
     @Autowired
-    private TelegramConfigRepository telegramConfigRepository;
+    private TelegramConfigMapper telegramConfigMapper;
 
     @Autowired
     @Lazy
@@ -65,6 +65,7 @@ public class TelegramClientService {
     private volatile boolean connecting = false;
     private volatile long userId = 0;
     private volatile String userName = "";
+    private volatile int authState = STATE_NONE;
 
     // ==================== 认证状态（由 onAuthorizationStateUpdate 更新）====================
     /**
@@ -88,7 +89,8 @@ public class TelegramClientService {
      */
     public static final int STATE_NONE = -1;
 
-    private volatile int authState = STATE_NONE;
+    public boolean isConnected() { return connected; }
+    public boolean isConnecting() { return connecting; }
 
 
     /**
@@ -143,7 +145,7 @@ public class TelegramClientService {
         // 注意：authState 由 onAuthorizationStateUpdate 回调更新，不在这里预设
 
         try {
-            TelegramConfig config = telegramConfigRepository.findByConfigName("default")
+            TelegramConfig config = telegramConfigMapper.findByConfigName("default")
                     .orElseThrow(() -> new IllegalStateException("请先保存 Telegram 配置（API ID / Hash）"));
 
             if (config.getApiId() == null || config.getApiId().isEmpty()

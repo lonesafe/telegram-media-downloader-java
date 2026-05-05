@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tgdownloader.dto.ApiResponse;
 import com.tgdownloader.entity.ForwardTask;
 import com.tgdownloader.entity.TelegramConfig;
-import com.tgdownloader.repository.ForwardTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.ForwardTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.service.ForwardService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,10 +28,10 @@ public class ForwardController {
     private static final ObjectMapper json = new ObjectMapper();
 
     @Autowired
-    private ForwardTaskRepository forwardTaskRepository;
+    private ForwardTaskMapper forwardTaskMapper;
 
     @Autowired
-    private TelegramConfigRepository configRepo;
+    private TelegramConfigMapper configMapper;
 
     @Autowired
     private ForwardService forwardService;
@@ -49,21 +49,21 @@ public class ForwardController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String chatId) {
         try {
-            PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-            Page<ForwardTask> taskPage;
+            com.mybatisflex.core.paginate.Page<ForwardTask> taskPage;
+            org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
 
             if (status != null && !status.isEmpty()) {
-                taskPage = forwardTaskRepository.findByStatus(status, pageRequest);
+                taskPage = forwardTaskMapper.findByStatus(status, pageRequest);
             } else if (chatId != null && !chatId.isEmpty()) {
-                taskPage = forwardTaskRepository.findBySourceChatId(Long.valueOf(chatId), pageRequest);
+                taskPage = forwardTaskMapper.findBySourceChatId(Long.valueOf(chatId), pageRequest);
             } else {
-                taskPage = forwardTaskRepository.findAll(pageRequest);
+                taskPage = forwardTaskMapper.findAll(pageRequest);
             }
 
             Map<String, Object> result = new HashMap<>();
-            result.put("tasks", taskPage.getContent());
-            result.put("total", taskPage.getTotalElements());
-            result.put("pages", taskPage.getTotalPages());
+            result.put("tasks", taskPage.getRecords());
+            result.put("total", taskPage.getTotalRow());
+            result.put("pages", (taskPage.getTotalRow() + size - 1) / size);
             result.put("page", page);
             result.put("size", size);
 
@@ -115,7 +115,7 @@ public class ForwardController {
                 task.setTargetChatId(Long.parseLong(targetChatId));
                 task.setMessageId(msgId);
                 task.setStatus("PENDING");
-                forwardTaskRepository.save(task);
+                forwardTaskMapper.save(task);
                 created++;
             }
             return ApiResponse.success(Map.of("created", created, "message", "已创建 " + created + " 个转发任务"));
@@ -128,7 +128,7 @@ public class ForwardController {
     @GetMapping("/listener/config")
     public ApiResponse<Map<String, Object>> getListenerConfig() {
         try {
-            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg == null) {
                 return ApiResponse.error("配置不存在");
             }
@@ -148,7 +148,7 @@ public class ForwardController {
     @PostMapping("/listener/config")
     public ApiResponse<String> saveListenerConfig(@RequestBody Map<String, Object> body) {
         try {
-            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg == null) {
                 cfg = new TelegramConfig("default");
             }
@@ -166,7 +166,7 @@ public class ForwardController {
                     cfg.setForwardListenerTargetChatId(Long.valueOf(targetId.toString()));
                 }
             }
-            configRepo.save(cfg);
+            configMapper.save(cfg);
             return ApiResponse.success("配置已保存");
         } catch (Exception e) {
             log.error("保存转发监听配置失败", e);
@@ -203,14 +203,14 @@ public class ForwardController {
             }
 
             // 1. 先将配置写入数据库
-            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg == null) {
                 cfg = new TelegramConfig("default");
             }
             cfg.setForwardListenerEnabled(true);
             cfg.setForwardListenerSourceChatIds(json.writeValueAsString(sourceIds));
             cfg.setForwardListenerTargetChatId(Long.valueOf(targetId.toString()));
-            configRepo.save(cfg);
+            configMapper.save(cfg);
 
             // 2. 重新加载配置并启动监听
             forwardService.stopListening();
@@ -246,7 +246,7 @@ public class ForwardController {
             }
             Long chatId = Long.valueOf(chatIdObj.toString());
             
-            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg == null) {
                 cfg = new TelegramConfig("default");
             }
@@ -259,7 +259,7 @@ public class ForwardController {
             if (!sourceIds.contains(chatId)) {
                 sourceIds.add(chatId);
                 cfg.setForwardListenerSourceChatIds(json.writeValueAsString(sourceIds));
-                configRepo.save(cfg);
+                configMapper.save(cfg);
             }
             return ApiResponse.success("源聊天已添加");
         } catch (Exception e) {
@@ -274,12 +274,12 @@ public class ForwardController {
     @DeleteMapping("/listener/sources/{chatId}")
     public ApiResponse<String> removeSourceChat(@PathVariable Long chatId) {
         try {
-            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg != null && cfg.getForwardListenerSourceChatIds() != null) {
                 List<Long> sourceIds = json.readValue(cfg.getForwardListenerSourceChatIds(), new TypeReference<List<Long>>() {});
                 sourceIds.remove(chatId);
                 cfg.setForwardListenerSourceChatIds(json.writeValueAsString(sourceIds));
-                configRepo.save(cfg);
+                configMapper.save(cfg);
             }
             return ApiResponse.success("源聊天已移除");
         } catch (Exception e) {
@@ -300,12 +300,12 @@ public class ForwardController {
             }
             Long chatId = Long.valueOf(chatIdObj.toString());
             
-            TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg == null) {
                 cfg = new TelegramConfig("default");
             }
             cfg.setForwardListenerTargetChatId(chatId);
-            configRepo.save(cfg);
+            configMapper.save(cfg);
             return ApiResponse.success("目标聊天已设置");
         } catch (Exception e) {
             return ApiResponse.error("设置目标聊天失败: " + e.getMessage());
@@ -325,7 +325,7 @@ public class ForwardController {
     @DeleteMapping("/task/{id}")
     public ApiResponse<String> deleteTask(@PathVariable Long id) {
         try {
-            forwardTaskRepository.deleteById(id);
+            forwardTaskMapper.deleteById(id);
             return ApiResponse.success("任务已删除");
         } catch (Exception e) {
             return ApiResponse.error("删除任务失败: " + e.getMessage());

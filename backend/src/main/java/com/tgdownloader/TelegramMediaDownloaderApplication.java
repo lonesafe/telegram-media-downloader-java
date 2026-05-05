@@ -5,6 +5,7 @@ import it.tdlight.Log;
 import it.tdlight.Slf4JLogMessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -17,6 +18,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableScheduling
 @EnableAsync
+@MapperScan("com.tgdownloader.mapper")
 public class TelegramMediaDownloaderApplication {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramMediaDownloaderApplication.class);

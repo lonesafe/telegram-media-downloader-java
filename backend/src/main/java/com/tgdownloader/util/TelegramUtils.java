@@ -5,12 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tgdownloader.entity.ChatConfig;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.model.DownloadStatus;
-import com.tgdownloader.repository.ChatConfigRepository;
-import com.tgdownloader.repository.DownloadTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.ChatConfigMapper;
+import com.tgdownloader.mapper.DownloadTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.service.TelegramClientService;
 import it.tdlight.jni.TdApi;
-import lombok.Data;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Telegram 工具类
@@ -28,81 +26,71 @@ import java.util.Objects;
  */
 @Log4j2
 @Service
-@Data
 public class TelegramUtils {
 
-    @Autowired
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TelegramUtils.class);
+
+    // ── Autowired fields (set by Spring) ─────────────────────────────────────
     private TelegramClientService telegramClientService;
+    private TelegramConfigMapper configMapper;
+    private ChatConfigMapper chatConfigMapper;
+    private DownloadTaskMapper downloadTaskMapper;
 
     @Autowired
-    private TelegramConfigRepository configRepository;
-
+    public void setTelegramClientService(TelegramClientService s) { this.telegramClientService = s; }
     @Autowired
-    private ChatConfigRepository chatConfigRepository;
-
+    public void setConfigMapper(TelegramConfigMapper m) { this.configMapper = m; }
     @Autowired
-    private DownloadTaskRepository downloadTaskRepository;
+    public void setChatConfigMapper(ChatConfigMapper m) { this.chatConfigMapper = m; }
+    @Autowired
+    public void setDownloadTaskMapper(DownloadTaskMapper m) { this.downloadTaskMapper = m; }
 
+    public TelegramClientService getTelegramClientService() { return telegramClientService; }
+    public TelegramConfigMapper getConfigMapper() { return configMapper; }
+    public ChatConfigMapper getChatConfigMapper() { return chatConfigMapper; }
+    public DownloadTaskMapper getDownloadTaskMapper() { return downloadTaskMapper; }
 
-    /**
-     * 保存任务（统一持久化入口）
-     */
     public void saveTask(DownloadTask task) {
-        downloadTaskRepository.save(task);
+        getDownloadTaskMapper().insertOrUpdate(task);
     }
 
     // ==================== 实例实现 ====================
 
     public DownloadTask buildTask(ChatConfig cfg, TdApi.Message msg) {
         // 0. 去重检查
-        if (downloadTaskRepository.existsByChatIdAndMessageId(String.valueOf(msg.chatId), msg.id)) {
+        if (getDownloadTaskMapper().existsByChatIdAndMessageId(String.valueOf(msg.chatId), msg.id)) {
             log.debug("任务已存在，跳过: chatId={}, msgId={}", msg.chatId, msg.id);
             return null;
         }
 
-        // 1. 检查媒体类型是否在允许范围内
-        String downloadTypes = null;
-        try {
-            var tgc = configRepository.findByConfigName("default").orElse(null);
-            if (tgc != null) downloadTypes = tgc.getDownloadTypes();
-        } catch (Exception e) {
-            log.warn("获取下载类型配置失败: {}", e.getMessage());
-        }
-
-        if (!TelegramUtils.isAllowedDownloadType(msg, downloadTypes)) {
-            log.info("消息类型不在允许的下载类型中，跳过: msgId={}", msg.id);
-            return null;
-        }
-
-        // 2. 自动查找或创建 ChatConfig
+        // 1. 自动查找或创建 ChatConfig
+        String chatIdStr = String.valueOf(msg.chatId);
         if (cfg == null) {
-            String chatIdStr = String.valueOf(msg.chatId);
-            cfg = chatConfigRepository.findByChatId(chatIdStr).orElseGet(() -> {
-                ChatConfig c = new ChatConfig();
-                c.setChatId(chatIdStr);
-                c.setEnabled(true);
-                return chatConfigRepository.save(c);
-            });
+            cfg = getChatConfigMapper().findByChatId(chatIdStr).orElse(null);
+            if (cfg == null) {
+                cfg = new ChatConfig();
+                cfg.setChatId(chatIdStr);
+                cfg.setEnabled(true);
+                getChatConfigMapper().insertSelective(cfg);
+            }
         }
 
-        // 3. 构建任务
+        // 2. 构建任务
         DownloadTask task = new DownloadTask();
         task.setChatId(String.valueOf(msg.chatId));
         task.setMessageId(msg.id);
-        task.setChatConfig(cfg);
+        task.setChatConfigId(cfg.getId());
         task.setStatus(DownloadStatus.PENDING.name());
         task.setStartedAt(LocalDateTime.now());
-        task.setTelegramMessage(msg);
 
         // 文件名
         FileRef fr = getFileRef(msg);
         if (fr == null) return null;
         task.setFileName(fr.fileName());
 
-
         // Chat 标题
         try {
-            TdApi.Chat chat = telegramClientService.getChatSync(msg.chatId);
+            TdApi.Chat chat = getTelegramClientService().getChatSync(msg.chatId);
             if (chat != null) {
                 task.setChatTitle(chat.title);
             }
@@ -113,8 +101,9 @@ public class TelegramUtils {
         // 序列化消息
         task.setTelegramMessage(msg);
 
-        // 4. 持久化
-        return downloadTaskRepository.save(task);
+        // 3. 持久化
+        getDownloadTaskMapper().insertSelective(task);
+        return task;
     }
 
     // ==================== 文件引用 ====================
@@ -178,8 +167,7 @@ public class TelegramUtils {
         if (mediaType == null) return false;
         if (allowedTypesJson == null || allowedTypesJson.isEmpty()) return "video".equals(mediaType);
         try {
-            List<String> allowedTypes = new ObjectMapper().readValue(allowedTypesJson, new TypeReference<List<String>>() {
-            });
+            List<String> allowedTypes = new ObjectMapper().readValue(allowedTypesJson, new TypeReference<List<String>>() {});
             return allowedTypes.contains(mediaType);
         } catch (Exception e) {
             log.warn("解析下载类型配置失败: {}", allowedTypesJson);
@@ -190,6 +178,5 @@ public class TelegramUtils {
     /**
      * 文件引用（ID + 名称 + 大小 + 类型）
      */
-    public record FileRef(int fileId, String fileName, long fileSize, String mediaType) {
-    }
+    public record FileRef(int fileId, String fileName, long fileSize, String mediaType) {}
 }

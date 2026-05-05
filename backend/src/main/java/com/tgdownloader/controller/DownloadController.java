@@ -5,7 +5,7 @@ import com.tgdownloader.dto.DownloadProgressDto;
 import com.tgdownloader.dto.DownloadTaskRequest;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.model.DownloadStatus;
-import com.tgdownloader.repository.DownloadTaskRepository;
+import com.tgdownloader.mapper.DownloadTaskMapper;
 import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.TelegramClientService;
 import com.tgdownloader.util.ByteFormatUtil;
@@ -33,7 +33,7 @@ public class DownloadController {
     private static final Logger log = LoggerFactory.getLogger(DownloadController.class);
 
     @Autowired
-    private DownloadTaskRepository downloadTaskRepository;
+    private DownloadTaskMapper downloadTaskMapper;
     @Autowired
     private DownloadCoreService downloadCoreService;
     @Autowired
@@ -47,67 +47,67 @@ public class DownloadController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        org.springframework.data.domain.Page<DownloadTask> taskPage;
-        PageRequest pageRequest = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        com.mybatisflex.core.paginate.Page<DownloadTask> taskPage;
+        org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         taskPage = switch (tab) {
             case "downloading" ->
                 // 正在下载：DOWNLOADING
-                    downloadTaskRepository.findByStatusIn(
+                    downloadTaskMapper.findByStatusIn(
                             List.of(DownloadStatus.DOWNLOADING.name()),
                             pageRequest);
             case "waiting" ->
                 // 等待中：QUEUED（已在队列排队）+ PENDING（已暂停）
-                    downloadTaskRepository.findByStatusIn(
+                    downloadTaskMapper.findByStatusIn(
                             List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()),
                             pageRequest);
             case "paused" ->
                 // 已暂停：PAUSED（用户手动停止）
-                    downloadTaskRepository.findByStatusIn(
+                    downloadTaskMapper.findByStatusIn(
                             List.of(DownloadStatus.PAUSED.name()),
                             pageRequest);
             case "skipped" ->
                 // 已跳过：SKIP_DOWNLOAD（文件已存在或被过滤规则排除）
-                    downloadTaskRepository.findByStatusIn(
+                    downloadTaskMapper.findByStatusIn(
                             List.of(DownloadStatus.SKIP_DOWNLOAD.name()),
                             pageRequest);
             case "completed" ->
                 // 下载完成：SUCCESS_DOWNLOAD
-                    downloadTaskRepository.findByStatusIn(
+                    downloadTaskMapper.findByStatusIn(
                             List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()),
                             pageRequest);
             case "failed" ->
                 // 下载失败：FAILED_DOWNLOAD（可重试）
-                    downloadTaskRepository.findByStatusIn(
+                    downloadTaskMapper.findByStatusIn(
                             List.of(DownloadStatus.FAILED_DOWNLOAD.name()),
                             pageRequest);
             default ->
                 // all: 全部任务
-                    downloadTaskRepository.findAll(pageRequest);
+                    downloadTaskMapper.findAll(pageRequest);
         };
 
         // 获取实时速度
         Map<Long, Long> taskSpeeds = downloadCoreService.getAllTaskSpeeds();
 
-        List<Map<String, Object>> result = taskPage.getContent().stream()
+        List<Map<String, Object>> result = taskPage.getRecords().stream()
                 .map(task -> toMap(task, taskSpeeds.get(task.getId())))
                 .collect(Collectors.toList());
 
         // 统计各选项卡数量
-        long downloadingCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
-        long waitingCount = downloadTaskRepository.countByStatusIn(
+        long downloadingCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
+        long waitingCount = downloadTaskMapper.countByStatusIn(
                 List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
-        long pausedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
-        long skippedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
-        long completedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
-        long failedCount = downloadTaskRepository.countByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
+        long pausedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
+        long skippedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
+        long completedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
+        long failedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("list", result);
-        response.put("total", taskPage.getTotalElements());
+        response.put("total", taskPage.getTotalRow());
         response.put("page", page);
         response.put("size", size);
-        response.put("pages", taskPage.getTotalPages());
+        response.put("pages", (taskPage.getTotalRow() + size - 1) / size);
         // 各选项卡计数
         response.put("downloadingCount", downloadingCount);
         response.put("waitingCount", waitingCount);
@@ -136,7 +136,7 @@ public class DownloadController {
 
     @PostMapping("/stop/{taskId}")
     public ApiResponse<Void> stopTask(@PathVariable Long taskId) {
-        DownloadTask task = downloadTaskRepository.findById(taskId)
+        DownloadTask task = downloadTaskMapper.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
 
         task.setIsStopTransmission(true);
@@ -150,7 +150,7 @@ public class DownloadController {
 
     @PostMapping("/resume/{taskId}")
     public ApiResponse<Void> resumeTask(@PathVariable Long taskId) {
-        DownloadTask task = downloadTaskRepository.findById(taskId)
+        DownloadTask task = downloadTaskMapper.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
 
         task.setIsStopTransmission(false);
@@ -166,7 +166,7 @@ public class DownloadController {
 
     @GetMapping("/status/{taskId}")
     public ApiResponse<Map<String, Object>> getStatus(@PathVariable Long taskId) {
-        DownloadTask task = downloadTaskRepository.findById(taskId)
+        DownloadTask task = downloadTaskMapper.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
 
         return ApiResponse.success(toMap(task));
@@ -174,9 +174,7 @@ public class DownloadController {
 
     @GetMapping("/tasks")
     public ApiResponse<List<Map<String, Object>>> getAllTasks() {
-        List<DownloadTask> tasks = downloadTaskRepository.findAll(
-                Sort.by(Sort.Direction.DESC, "createdAt")
-        );
+        List<DownloadTask> tasks = downloadTaskMapper.findAll();
 
         List<Map<String, Object>> result = tasks.stream()
                 .map(this::toMap)
@@ -187,12 +185,13 @@ public class DownloadController {
 
     @DeleteMapping("/completed")
     public ApiResponse<Void> clearCompleted() {
-        List<DownloadTask> completed = downloadTaskRepository.findByStatusIn(
+        List<DownloadTask> completed = downloadTaskMapper.findByStatusIn(
                 List.of(DownloadStatus.SUCCESS_DOWNLOAD.name(),
                         DownloadStatus.SKIP_DOWNLOAD.name(),
-                        DownloadStatus.FAILED_DOWNLOAD.name())
-        );
-        downloadTaskRepository.deleteAll(completed);
+                        DownloadStatus.FAILED_DOWNLOAD.name()));
+        for (DownloadTask t : completed) {
+            downloadTaskMapper.deleteById(t.getId());
+        }
         return ApiResponse.success();
     }
 
@@ -239,7 +238,7 @@ public class DownloadController {
             task.setMessageId(messageId);
             task.setStatus("PENDING");
             task.setCreatedAt(java.time.LocalDateTime.now());
-            task = downloadTaskRepository.save(task);
+            task = downloadTaskMapper.save(task);
             
             downloadCoreService.startDownload(task);
             return ApiResponse.success(Map.of("taskId", task.getId(), "message", "任务已创建"));
@@ -251,7 +250,7 @@ public class DownloadController {
 
     @DeleteMapping("/task/{taskId}")
     public ApiResponse<Void> deleteTask(@PathVariable Long taskId) {
-        downloadTaskRepository.deleteById(taskId);
+        downloadTaskMapper.deleteById(taskId);
         return ApiResponse.success();
     }
 

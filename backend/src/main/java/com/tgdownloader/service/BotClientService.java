@@ -2,7 +2,7 @@ package com.tgdownloader.service;
 
 import com.tgdownloader.entity.TelegramConfig;
 import com.tgdownloader.handler.bot.BotCommandHandler;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import it.tdlight.client.*;
 import it.tdlight.jni.TdApi;
 import jakarta.annotation.PreDestroy;
@@ -26,12 +26,14 @@ public class BotClientService {
     private static final Logger log = LoggerFactory.getLogger(BotClientService.class);
 
     @Autowired
-    private TelegramConfigRepository configRepository;
+    private TelegramConfigMapper configMapper;
 
     @Autowired
     private BotCommandHandler commandHandler;
 
     private SimpleTelegramClient botClient;
+    public boolean isConnected() { return connected; }
+    public boolean isConnecting() { return connecting; }
     private volatile boolean connected = false;
     private volatile boolean connecting = false;
 
@@ -45,7 +47,7 @@ public class BotClientService {
         }
         connecting = true;
 
-        TelegramConfig config = configRepository.findByConfigName("default").orElse(new TelegramConfig());
+        TelegramConfig config = configMapper.findByConfigName("default").orElse(new TelegramConfig());
         int apiId = Integer.parseInt(config.getApiId() != null ? config.getApiId() : "0");
         String apiHash = config.getApiHash() != null ? config.getApiHash() : "";
 

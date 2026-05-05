@@ -1,75 +1,90 @@
 package com.tgdownloader.entity;
 
-import jakarta.persistence.*;
+import com.mybatisflex.annotation.Column;
+import com.mybatisflex.annotation.Id;
+import com.mybatisflex.annotation.KeyType;
+import com.mybatisflex.annotation.Table;
 import lombok.Data;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
-import java.util.*;
 
-@Entity
-@Data
-@Table(name = "chat_config")
+/**
+ * 聊天配置实体
+ */
+@Table("chat_config")
 public class ChatConfig {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id(keyType = KeyType.Auto)
     private Long id;
-
-    @Column(name = "chat_id", unique = true, nullable = false)
+    @Column("chat_id")
     private String chatId;
-
-    @Column(name = "title")
+    @Column("title")
     private String title;
-
-    @Column(name = "type")
-    private String type; // channel / group / supergroup / private
-
-    @Column(name = "enabled", nullable = false)
+    @Column("type")
+    private String type;
+    @Column("enabled")
     private Boolean enabled = true;
-
-    @Column(name = "filter_type")
-    private String filterType; // ALL / PHOTO / VIDEO / DOCUMENT / AUDIO / VOICE / OTHER
-
-    @Column(name = "auto_delete_after_hours")
+    @Column("filter_type")
+    private String filterType;
+    @Column("auto_delete_after_hours")
     private Integer autoDeleteAfterHours;
-
-    @Column(name = "file_name_template")
+    @Column("file_name_template")
     private String fileNameTemplate;
-
-    @Column(name = "download_path")
+    @Column("download_path")
     private String downloadPath;
-
-    @Column(name = "remote_path")
+    @Column("remote_path")
     private String remotePath;
-
-    @Column(name = "upload_after_download")
+    @Column("upload_after_download")
     private Boolean uploadAfterDownload = false;
-
-    @Column(name = "notify_after_download")
+    @Column("notify_after_download")
     private Boolean notifyAfterDownload = true;
-
-    @Column(name = "forward_to_chat_id")
+    @Column("forward_to_chat_id")
     private Long forwardToChatId;
-
-    @Column(name = "extra_data", columnDefinition = "TEXT")
+    @Column("extra_data")
     private String extraData;
-
-    @Column(name = "username")
+    @Column("username")
     private String username;
-
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
+    @Column("created_at")
     private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at")
+    @Column("updated_at")
     private LocalDateTime updatedAt;
 
-
+    // ── Getter / Setter ─────────────────────────────────────────────────────
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public String getChatId() { return chatId; }
+    public void setChatId(String chatId) { this.chatId = chatId; }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+    public Boolean getEnabled() { return enabled; }
+    public void setEnabled(Boolean enabled) { this.enabled = enabled; }
+    public String getFilterType() { return filterType; }
+    public void setFilterType(String filterType) { this.filterType = filterType; }
+    public Integer getAutoDeleteAfterHours() { return autoDeleteAfterHours; }
+    public void setAutoDeleteAfterHours(Integer autoDeleteAfterHours) { this.autoDeleteAfterHours = autoDeleteAfterHours; }
+    public String getFileNameTemplate() { return fileNameTemplate; }
+    public void setFileNameTemplate(String fileNameTemplate) { this.fileNameTemplate = fileNameTemplate; }
+    public String getDownloadPath() { return downloadPath; }
+    public void setDownloadPath(String downloadPath) { this.downloadPath = downloadPath; }
+    public String getRemotePath() { return remotePath; }
+    public void setRemotePath(String remotePath) { this.remotePath = remotePath; }
+    public Boolean getUploadAfterDownload() { return uploadAfterDownload; }
+    public void setUploadAfterDownload(Boolean uploadAfterDownload) { this.uploadAfterDownload = uploadAfterDownload; }
+    public Boolean getNotifyAfterDownload() { return notifyAfterDownload; }
+    public void setNotifyAfterDownload(Boolean notifyAfterDownload) { this.notifyAfterDownload = notifyAfterDownload; }
+    public Long getForwardToChatId() { return forwardToChatId; }
+    public void setForwardToChatId(Long forwardToChatId) { this.forwardToChatId = forwardToChatId; }
+    public String getExtraData() { return extraData; }
+    public void setExtraData(String extraData) { this.extraData = extraData; }
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
     @Override public String toString() { return "ChatConfig{id=" + id + ", chatId=" + chatId + ", title='" + title + "'}"; }
-    @Override public boolean equals(Object o) { return this == o; }
-    @Override public int hashCode() { return getClass().hashCode(); }
 }

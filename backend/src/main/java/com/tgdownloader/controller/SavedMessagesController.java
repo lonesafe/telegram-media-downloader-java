@@ -147,7 +147,9 @@ public class SavedMessagesController {
                 })
                 .filter(t -> "SUCCESS".equals(t.getStatus()) || "SKIP".equals(t.getStatus()) || "FAILED".equals(t.getStatus()))
                 .map(DownloadTask::getId).toList();
-        savedMessages.getTaskRepo().deleteAllById(ids);
+        for (Long id : ids) {
+            savedMessages.getTaskRepo().deleteById(id);
+        }
         return ApiResponse.success("已清除 " + ids.size() + " 条");
     }
 

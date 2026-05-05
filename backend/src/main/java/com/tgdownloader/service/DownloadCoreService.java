@@ -3,15 +3,14 @@ package com.tgdownloader.service;
 import com.tgdownloader.dto.DownloadProgressDto;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.entity.TelegramConfig;
+import com.tgdownloader.mapper.DownloadTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.model.DownloadStatus;
-import com.tgdownloader.repository.DownloadTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
 import com.tgdownloader.util.TelegramUtils;
 import it.tdlight.jni.TdApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -38,15 +37,13 @@ public class DownloadCoreService {
     private static final Logger log = LoggerFactory.getLogger(DownloadCoreService.class);
 
     @Autowired
-    private DownloadTaskRepository taskRepo;
+    private DownloadTaskMapper taskMapper;
 
     @Autowired
-    private TelegramConfigRepository configRepo;
+    private TelegramConfigMapper configMapper;
 
     @Autowired
     private TelegramClientService telegramClient;
-    @Autowired
-    private DownloadTaskRepository downloadTaskRepository;
     @Autowired
     private TelegramUtils telegramUtils;
 
@@ -101,9 +98,8 @@ public class DownloadCoreService {
     @PostConstruct
     public void init() {
         // 从配置读取并发数
-        int poolSize = configRepo.findByConfigName("default")
-                .map(TelegramConfig::getMaxConcurrentTasks)
-                .orElse(5);
+        TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
+        int poolSize = (cfg != null ? cfg.getMaxConcurrentTasks() : 5);
         if (poolSize < 1) poolSize = 1;
         currentMaxConcurrent = poolSize;
         executor = new ThreadPoolExecutor(poolSize, poolSize, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
@@ -214,12 +210,13 @@ public class DownloadCoreService {
         // 3. 从追踪集合移除
         queuedOrRunning.remove(taskId);
         // 4. 更新数据库状态
-        taskRepo.findById(taskId).ifPresent(task -> {
-            task.setIsStopTransmission(true);
-            task.setStatus(DownloadStatus.PAUSED.name());
-            task.setFinishedAt(LocalDateTime.now());
-            telegramUtils.saveTask(task);
-        });
+        DownloadTask task4 = taskMapper.findById(taskId).orElse(null);
+        if (task4 != null) {
+            task4.setIsStopTransmission(true);
+            task4.setStatus(DownloadStatus.PAUSED.name());
+            task4.setFinishedAt(LocalDateTime.now());
+            telegramUtils.saveTask(task4);
+        }
         log.info("已暂停任务: {}", taskId);
     }
 
@@ -227,13 +224,14 @@ public class DownloadCoreService {
      * 恢复指定任务（清除手动停止标记，重新下载）
      */
     public void resumeTask(Long taskId) {
-        taskRepo.findById(taskId).ifPresent(task -> {
-            task.setIsStopTransmission(false);
-            task.setStatus(DownloadStatus.PENDING.name());
-            task.setFinishedAt(null);
-            startDownload(task);
+        DownloadTask task3 = taskMapper.findById(taskId).orElse(null);
+        if (task3 != null) {
+            task3.setIsStopTransmission(false);
+            task3.setStatus(DownloadStatus.PENDING.name());
+            task3.setFinishedAt(null);
+            startDownload(task3);
             log.info("已恢复任务: {}", taskId);
-        });
+        }
     }
 
     /**
@@ -254,8 +252,8 @@ public class DownloadCoreService {
         paused.set(false);
         log.info("已恢复所有下载");
         // 查找所有 PENDING 状态的任务，重新加入队列
-        List<DownloadTask> pendingTasks = taskRepo.findByStatusIn(
-                List.of(DownloadStatus.PENDING.name()), Pageable.unpaged()).getContent();
+        List<DownloadTask> pendingTasks = taskMapper.findByStatusIn(
+                List.of(DownloadStatus.PENDING.name()));
         for (DownloadTask t : pendingTasks) {
             if (!queuedOrRunning.contains(t.getId())) {
                 t.setStatus(DownloadStatus.QUEUED.name());
@@ -361,11 +359,12 @@ public class DownloadCoreService {
                             boolean progressChanged = fileSize > 0 && (downloadedSize - lastSaved) * 100 / fileSize >= 5;
                             boolean timeExpired = now - lastTimeMs > 2000;
                             if (progressChanged || timeExpired || downloadedSize == fileSize) {
-                                downloadTaskRepository.findById(taskId).ifPresent(task1 -> {
-                                    task1.setDownloadedSize(downloadedSize);
-                                    task1.setFileSize(fileSize);
-                                    downloadTaskRepository.save(task1);
-                                });
+                                DownloadTask task2 = taskMapper.findById(taskId).orElse(null);
+                                if (task2 != null) {
+                                    task2.setDownloadedSize(downloadedSize);
+                                    task2.setFileSize(fileSize);
+                                    taskMapper.update(task2);
+                                }
                                 lastSave[0] = downloadedSize;
                                 lastSave[1] = now;
                             }
@@ -393,7 +392,7 @@ public class DownloadCoreService {
             // 获取保存路径配置
             String savePath = null;
             try {
-                TelegramConfig cfg = configRepo.findByConfigName("default").orElse(null);
+                TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
                 if (cfg != null) {
                     savePath = cfg.getSavePath();
                     if (savePath == null || savePath.isEmpty()) {

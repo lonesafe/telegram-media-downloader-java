@@ -3,8 +3,8 @@ package com.tgdownloader.config;
 import com.tgdownloader.entity.DownloadTask;
 import com.tgdownloader.entity.TelegramConfig;
 import com.tgdownloader.model.DownloadStatus;
-import com.tgdownloader.repository.DownloadTaskRepository;
-import com.tgdownloader.repository.TelegramConfigRepository;
+import com.tgdownloader.mapper.DownloadTaskMapper;
+import com.tgdownloader.mapper.TelegramConfigMapper;
 import com.tgdownloader.service.BotClientService;
 import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.ForwardService;
@@ -37,10 +37,10 @@ public class AutoLoginInitializer implements ApplicationRunner {
     private TelegramUtils telegramUtils;
 
     @Autowired
-    private TelegramConfigRepository configRepository;
+    private TelegramConfigMapper configMapper;
 
     @Autowired
-    private DownloadTaskRepository taskRepository;
+    private DownloadTaskMapper taskMapper;
 
     @Autowired
     private TelegramClientService telegramClientService;
@@ -61,7 +61,7 @@ public class AutoLoginInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         log.info("========== Startup init check ==========");
 
-        TelegramConfig config = configRepository.findByConfigName("default").orElse(null);
+        TelegramConfig config = configMapper.findByConfigName("default").orElse(null);
 
         if (config != null) {
             tryAutoLoginUser(config);
@@ -85,7 +85,7 @@ public class AutoLoginInitializer implements ApplicationRunner {
                 return;
             }
 
-            TelegramConfig cfg = configRepository.findByConfigName("default").orElse(null);
+            TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
 
             // Resume unfinished download tasks
             resumeUnfinishedTasks();
@@ -114,8 +114,8 @@ public class AutoLoginInitializer implements ApplicationRunner {
                 DownloadStatus.PAUSED.name(),
                 DownloadStatus.FAILED_DOWNLOAD.name()
         );
-        List<DownloadTask> unfinished = taskRepository.findByStatusNotIn(skipStatuses, Pageable.unpaged())
-                .getContent();
+        String statuses = String.join(",", skipStatuses.stream().map(s -> "'" + s + "'").toList());
+        List<DownloadTask> unfinished = taskMapper.findUnfinishedTasks(statuses);
 
         if (unfinished.isEmpty()) {
             log.info("No unfinished download tasks");
