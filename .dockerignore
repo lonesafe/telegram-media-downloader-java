@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Frontend dev artifacts (not needed inside the image; built artifact is copied via multi-stage build)
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# Backend build output (rebuilt inside the image)
+backend/target/
+
+# Logs & temp
+logs/
+data/
+temp/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Misc
+*.md
+!.gitkeep

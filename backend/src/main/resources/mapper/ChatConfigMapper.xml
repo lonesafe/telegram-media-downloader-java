@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tgdownloader.mapper.ChatConfigMapper">
+
+    <!-- 按 chatId 查询 -->
+    <select id="findByChatId" resultType="com.tgdownloader.entity.ChatConfig">
+        SELECT * FROM chat_config WHERE chat_id = #{chatId} LIMIT 1
+    </select>
+
+    <!-- 按主键查询 -->
+    <select id="findById" resultType="com.tgdownloader.entity.ChatConfig">
+        SELECT * FROM chat_config WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- 全量查询 -->
+    <select id="findAll" resultType="com.tgdownloader.entity.ChatConfig">
+        SELECT * FROM chat_config
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM chat_config
+    </select>
+
+</mapper>

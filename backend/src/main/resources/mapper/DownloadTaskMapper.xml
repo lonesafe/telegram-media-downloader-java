@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tgdownloader.mapper.DownloadTaskMapper">
+
+    <!-- 全量查询（不分页） -->
+    <select id="findAll" resultType="com.tgdownloader.entity.DownloadTask">
+        SELECT * FROM download_task ORDER BY id DESC
+    </select>
+
+    <!-- 分页查询：按状态列表 -->
+    <select id="findByStatusIn" resultMap="baseResultMap">
+        SELECT * FROM download_task
+        WHERE status IN (${statuses})
+        ORDER BY id DESC
+    </select>
+
+    <!-- 分页查询：全部 -->
+    <select id="findAllPage" resultMap="baseResultMap">
+        SELECT * FROM download_task ORDER BY id DESC
+    </select>
+
+    <!-- 按状态查询（不分页） -->
+    <select id="findByStatus" resultType="com.tgdownloader.entity.DownloadTask">
+        SELECT * FROM download_task WHERE status = #{status}
+    </select>
+
+    <!-- 查询未完成任务（排除终态） -->
+    <select id="findUnfinishedTasks" resultType="com.tgdownloader.entity.DownloadTask">
+        SELECT * FROM download_task WHERE status NOT IN (${statuses})
+    </select>
+
+    <!-- 检查是否存在（去重） -->
+    <select id="existsByChatIdAndMessageId" resultType="boolean">
+        SELECT COUNT(*) FROM download_task
+        WHERE chat_id = #{chatId} AND message_id = #{messageId}
+    </select>
+
+    <!-- 按状态计数（String 版，用于 XML 默认方法） -->
+    <select id="countByStatusInStr" resultType="long">
+        SELECT COUNT(*) FROM download_task WHERE status IN (${statuses})
+    </select>
+
+    <!-- 按 ID 查询（Optional 包装） -->
+    <select id="findById" resultType="com.tgdownloader.entity.DownloadTask">
+        SELECT * FROM download_task WHERE id = #{id} LIMIT 1
+    </select>
+
+</mapper>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tgdownloader.mapper.ForwardTaskMapper">
+
+    <!-- 按状态分页 -->
+    <select id="findByStatus" resultType="com.tgdownloader.entity.ForwardTask">
+        SELECT * FROM forward_task WHERE status = #{status} ORDER BY id DESC
+    </select>
+
+    <!-- 按源chatId分页 -->
+    <select id="findBySourceChatId" resultType="com.tgdownloader.entity.ForwardTask">
+        SELECT * FROM forward_task WHERE source_chat_id = #{sourceChatId} ORDER BY id DESC
+    </select>
+
+    <!-- 全量分页 -->
+    <select id="findAll" resultType="com.tgdownloader.entity.ForwardTask">
+        SELECT * FROM forward_task ORDER BY id DESC
+    </select>
+
+    <!-- 按状态计数 -->
+    <select id="countByStatus" resultType="long">
+        SELECT COUNT(*) FROM forward_task WHERE status = #{status}
+    </select>
+
+    <!-- 全量计数 -->
+    <select id="selectCount" resultType="long">
+        SELECT COUNT(*) FROM forward_task
+    </select>
+
+    <!-- 按主键查询 -->
+    <select id="selectById" resultType="com.tgdownloader.entity.ForwardTask">
+        SELECT * FROM forward_task WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- 检查是否已存在（用于去重） -->
+    <select id="existsBySourceChatIdAndMessageIdAndTargetChatId" resultType="boolean">
+        SELECT COUNT(*) FROM forward_task
+        WHERE source_chat_id = #{sourceChatId}
+          AND message_id = #{messageId}
+          AND target_chat_id = #{targetChatId}
+    </select>
+
+</mapper>

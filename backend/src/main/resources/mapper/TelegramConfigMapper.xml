@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tgdownloader.mapper.TelegramConfigMapper">
+
+    <!-- 按配置名称查询（仅一条） -->
+    <select id="findByConfigName" resultType="com.tgdownloader.entity.TelegramConfig">
+        SELECT * FROM telegram_config WHERE config_name = #{configName} LIMIT 1
+    </select>
+
+    <!-- 全量查询（仅一条配置） -->
+    <select id="findAll" resultType="com.tgdownloader.entity.TelegramConfig">
+        SELECT * FROM telegram_config
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM telegram_config
+    </select>
+
+</mapper>
