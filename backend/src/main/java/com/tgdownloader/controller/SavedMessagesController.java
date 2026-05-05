@@ -109,23 +109,25 @@ public class SavedMessagesController {
 
     @PostMapping("/tasks/{id}/pause")
     public ApiResponse<String> pause(@PathVariable Long id) {
-        savedMessages.getTaskRepo().findById(id).ifPresent(t -> {
+        DownloadTask t = savedMessages.getTaskRepo().findById(id);
+        if (t != null) {
             t.setIsStopTransmission(true);
             t.setStatus(DownloadStatus.PAUSED.name());
             t.setFinishedAt(java.time.LocalDateTime.now());
             telegramUtils.saveTask(t);
-        });
+        }
         return ApiResponse.success("已暂停");
     }
 
     @PostMapping("/tasks/{id}/resume")
     public ApiResponse<String> resume(@PathVariable Long id) {
-        savedMessages.getTaskRepo().findById(id).ifPresent(t -> {
+        DownloadTask t = savedMessages.getTaskRepo().findById(id);
+        if (t != null) {
             t.setIsStopTransmission(false);
             t.setStatus(DownloadStatus.PENDING.name());
             t.setFinishedAt(null);
             downloadCore.startDownload(t);
-        });
+        }
         return ApiResponse.success("已继续");
     }
 

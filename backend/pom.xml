@@ -22,8 +22,6 @@
         <java.version>17</java.version>
         <!-- TDLight 版本：与 Spring Boot 3.3.0 兼容的最新版 -->
         <tdlight.version>3.3.0+td.1.8.25</tdlight.version>
-        <!-- MyBatis-Flex 版本：与 Spring Boot 3.3.0 兼容的最新版 -->
-        <mybatis-flex.version>1.11.0</mybatis-flex.version>
         <mybatis.version>3.0.4</mybatis.version>
 
     </properties>
@@ -53,13 +51,7 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- MyBatis-Flex BOM（统一版本） -->
-            <dependency>
-                <groupId>com.mybatis-flex</groupId>
-                <artifactId>mybatis-flex-bom</artifactId>
-                <version>${mybatis-flex.version}</version>
-                <type>pom</type>
-            </dependency>
+
         </dependencies>
     </dependencyManagement>
 

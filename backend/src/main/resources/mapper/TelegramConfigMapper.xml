@@ -3,18 +3,121 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.tgdownloader.mapper.TelegramConfigMapper">
 
+    <!-- ResultMap -->
+    <resultMap id="baseResultMap" type="com.tgdownloader.entity.TelegramConfig">
+        <id column="id" property="id"/>
+        <result column="config_name" property="configName"/>
+        <result column="api_id" property="apiId"/>
+        <result column="api_hash" property="apiHash"/>
+        <result column="bot_token" property="botToken"/>
+        <result column="database_directory" property="databaseDirectory"/>
+        <result column="temp_path" property="tempPath"/>
+        <result column="save_path" property="savePath"/>
+        <result column="files_directory" property="filesDirectory"/>
+        <result column="use_test_dc" property="useTestDc"/>
+        <result column="language_code" property="languageCode"/>
+        <result column="max_concurrent_tasks" property="maxConcurrentTasks"/>
+        <result column="download_types" property="downloadTypes"/>
+        <result column="proxy_enabled" property="proxyEnabled"/>
+        <result column="proxy_scheme" property="proxyScheme"/>
+        <result column="proxy_hostname" property="proxyHostname"/>
+        <result column="proxy_port" property="proxyPort"/>
+        <result column="proxy_username" property="proxyUsername"/>
+        <result column="proxy_password" property="proxyPassword"/>
+        <result column="enable_upload_file" property="enableUploadFile"/>
+        <result column="upload_adapter" property="uploadAdapter"/>
+        <result column="remote_dir" property="remoteDir"/>
+        <result column="rclone_path" property="rclonePath"/>
+        <result column="before_upload_file_zip" property="beforeUploadFileZip"/>
+        <result column="after_upload_file_delete" property="afterUploadFileDelete"/>
+        <result column="download_chat_ids" property="downloadChatIds"/>
+        <result column="last_read_message_ids" property="lastReadMessageIds"/>
+        <result column="saved_messages_enabled" property="savedMessagesEnabled"/>
+        <result column="saved_messages_last_scan_message_id" property="savedMessagesLastScanMessageId"/>
+        <result column="forward_listener_enabled" property="forwardListenerEnabled"/>
+        <result column="forward_listener_source_chat_ids" property="forwardListenerSourceChatIds"/>
+        <result column="forward_listener_target_chat_id" property="forwardListenerTargetChatId"/>
+        <result column="forward_listener_last_message_id" property="forwardListenerLastMessageId"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
     <!-- 按配置名称查询（仅一条） -->
-    <select id="findByConfigName" resultType="com.tgdownloader.entity.TelegramConfig">
+    <select id="findByConfigName" resultMap="baseResultMap">
         SELECT * FROM telegram_config WHERE config_name = #{configName} LIMIT 1
     </select>
 
-    <!-- 全量查询（仅一条配置） -->
-    <select id="findAll" resultType="com.tgdownloader.entity.TelegramConfig">
+    <!-- 全量查询 -->
+    <select id="findAll" resultMap="baseResultMap">
         SELECT * FROM telegram_config
     </select>
 
-    <select id="countAll" resultType="long">
-        SELECT COUNT(*) FROM telegram_config
-    </select>
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.tgdownloader.entity.TelegramConfig" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO telegram_config (
+            config_name, api_id, api_hash, bot_token, database_directory,
+            temp_path, save_path, files_directory, use_test_dc, language_code,
+            max_concurrent_tasks, download_types, proxy_enabled, proxy_scheme,
+            proxy_hostname, proxy_port, proxy_username, proxy_password,
+            enable_upload_file, upload_adapter, remote_dir, rclone_path,
+            before_upload_file_zip, after_upload_file_delete,
+            download_chat_ids, last_read_message_ids,
+            saved_messages_enabled, saved_messages_last_scan_message_id,
+            forward_listener_enabled, forward_listener_source_chat_ids,
+            forward_listener_target_chat_id, forward_listener_last_message_id,
+            created_at, updated_at
+        ) VALUES (
+            #{configName}, #{apiId}, #{apiHash}, #{botToken}, #{databaseDirectory},
+            #{tempPath}, #{savePath}, #{filesDirectory}, #{useTestDc}, #{languageCode},
+            #{maxConcurrentTasks}, #{downloadTypes}, #{proxyEnabled}, #{proxyScheme},
+            #{proxyHostname}, #{proxyPort}, #{proxyUsername}, #{proxyPassword},
+            #{enableUploadFile}, #{uploadAdapter}, #{remoteDir}, #{rclonePath},
+            #{beforeUploadFileZip}, #{afterUploadFileDelete},
+            #{downloadChatIds}, #{lastReadMessageIds},
+            #{savedMessagesEnabled}, #{savedMessagesLastScanMessageId},
+            #{forwardListenerEnabled}, #{forwardListenerSourceChatIds},
+            #{forwardListenerTargetChatId}, #{forwardListenerLastMessageId},
+            NOW(), NOW()
+        )
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.tgdownloader.entity.TelegramConfig">
+        UPDATE telegram_config SET
+            config_name = #{configName},
+            api_id = #{apiId},
+            api_hash = #{apiHash},
+            bot_token = #{botToken},
+            database_directory = #{databaseDirectory},
+            temp_path = #{tempPath},
+            save_path = #{savePath},
+            files_directory = #{filesDirectory},
+            use_test_dc = #{useTestDc},
+            language_code = #{languageCode},
+            max_concurrent_tasks = #{maxConcurrentTasks},
+            download_types = #{downloadTypes},
+            proxy_enabled = #{proxyEnabled},
+            proxy_scheme = #{proxyScheme},
+            proxy_hostname = #{proxyHostname},
+            proxy_port = #{proxyPort},
+            proxy_username = #{proxyUsername},
+            proxy_password = #{proxyPassword},
+            enable_upload_file = #{enableUploadFile},
+            upload_adapter = #{uploadAdapter},
+            remote_dir = #{remoteDir},
+            rclone_path = #{rclonePath},
+            before_upload_file_zip = #{beforeUploadFileZip},
+            after_upload_file_delete = #{afterUploadFileDelete},
+            download_chat_ids = #{downloadChatIds},
+            last_read_message_ids = #{lastReadMessageIds},
+            saved_messages_enabled = #{savedMessagesEnabled},
+            saved_messages_last_scan_message_id = #{savedMessagesLastScanMessageId},
+            forward_listener_enabled = #{forwardListenerEnabled},
+            forward_listener_source_chat_ids = #{forwardListenerSourceChatIds},
+            forward_listener_target_chat_id = #{forwardListenerTargetChatId},
+            forward_listener_last_message_id = #{forwardListenerLastMessageId},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
 
 </mapper>

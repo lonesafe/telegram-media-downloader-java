@@ -2,8 +2,6 @@ package com.tgdownloader.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mybatisflex.core.paginate.Page;
-import com.mybatisflex.core.query.QueryWrapper;
 import com.tgdownloader.entity.ForwardTask;
 import com.tgdownloader.entity.TelegramConfig;
 import com.tgdownloader.mapper.ForwardTaskMapper;
@@ -14,8 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -191,13 +187,13 @@ public class ForwardService {
 
     // ==================== 查询 ====================
 
-    public Map<String, Object> list(Pageable p) {
-        org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(p.getPageNumber(), p.getPageSize());
-        com.mybatisflex.core.paginate.Page<ForwardTask> page = taskMapper.findAll(pageRequest);
+    public Map<String, Object> list(int page, int size) {
+        List<ForwardTask> tasks = taskMapper.findAll(page * size, size);
+        long total = taskMapper.selectCount();
         Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("tasks", page.getRecords());
-        result.put("total", page.getTotalRow());
-        result.put("pages", (page.getTotalRow() + p.getPageSize() - 1) / p.getPageSize());
+        result.put("tasks", tasks);
+        result.put("total", total);
+        result.put("pages", (total + size - 1) / size);
         return result;
     }
 

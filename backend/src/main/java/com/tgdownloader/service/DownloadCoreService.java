@@ -210,7 +210,7 @@ public class DownloadCoreService {
         // 3. 从追踪集合移除
         queuedOrRunning.remove(taskId);
         // 4. 更新数据库状态
-        DownloadTask task4 = taskMapper.findById(taskId).orElse(null);
+        DownloadTask task4 = taskMapper.findById(taskId);
         if (task4 != null) {
             task4.setIsStopTransmission(true);
             task4.setStatus(DownloadStatus.PAUSED.name());
@@ -224,7 +224,7 @@ public class DownloadCoreService {
      * 恢复指定任务（清除手动停止标记，重新下载）
      */
     public void resumeTask(Long taskId) {
-        DownloadTask task3 = taskMapper.findById(taskId).orElse(null);
+        DownloadTask task3 = taskMapper.findById(taskId);
         if (task3 != null) {
             task3.setIsStopTransmission(false);
             task3.setStatus(DownloadStatus.PENDING.name());
@@ -359,7 +359,7 @@ public class DownloadCoreService {
                             boolean progressChanged = fileSize > 0 && (downloadedSize - lastSaved) * 100 / fileSize >= 5;
                             boolean timeExpired = now - lastTimeMs > 2000;
                             if (progressChanged || timeExpired || downloadedSize == fileSize) {
-                                DownloadTask task2 = taskMapper.findById(taskId).orElse(null);
+                                DownloadTask task2 = taskMapper.findById(taskId);
                                 if (task2 != null) {
                                     task2.setDownloadedSize(downloadedSize);
                                     task2.setFileSize(fileSize);

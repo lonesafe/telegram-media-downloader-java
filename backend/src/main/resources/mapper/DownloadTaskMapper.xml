@@ -3,8 +3,40 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.tgdownloader.mapper.DownloadTaskMapper">
 
+    <!-- ResultMap -->
+    <resultMap id="baseResultMap" type="com.tgdownloader.entity.DownloadTask">
+        <id column="id" property="id"/>
+        <result column="message_id" property="messageId"/>
+        <result column="chat_id" property="chatId"/>
+        <result column="chat_title" property="chatTitle"/>
+        <result column="file_name" property="fileName"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="mime_type" property="mimeType"/>
+        <result column="status" property="status"/>
+        <result column="local_path" property="localPath"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="remote_url" property="remoteUrl"/>
+        <result column="upload_status" property="uploadStatus"/>
+        <result column="telegram_file_id" property="telegramFileId"/>
+        <result column="telegram_unique_file_id" property="telegramUniqueFileId"/>
+        <result column="downloaded_size" property="downloadedSize"/>
+        <result column="message_data" property="messageData"/>
+        <result column="chat_config_id" property="chatConfigId"/>
+        <result column="extra_data" property="extraData"/>
+        <result column="is_stop_transmission" property="isStopTransmission"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="finished_at" property="finishedAt"/>
+        <result column="total_task" property="totalTask"/>
+        <result column="success_task" property="successTask"/>
+        <result column="failed_task" property="failedTask"/>
+        <result column="skip_task" property="skipTask"/>
+        <result column="download_speed" property="downloadSpeed"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
     <!-- 全量查询（不分页） -->
-    <select id="findAll" resultType="com.tgdownloader.entity.DownloadTask">
+    <select id="findAll" resultMap="baseResultMap">
         SELECT * FROM download_task ORDER BY id DESC
     </select>
 
@@ -13,37 +45,147 @@
         SELECT * FROM download_task
         WHERE status IN (${statuses})
         ORDER BY id DESC
-    </select>
-
-    <!-- 分页查询：全部 -->
-    <select id="findAllPage" resultMap="baseResultMap">
-        SELECT * FROM download_task ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <!-- 按状态查询（不分页） -->
-    <select id="findByStatus" resultType="com.tgdownloader.entity.DownloadTask">
+    <select id="findByStatus" resultMap="baseResultMap">
         SELECT * FROM download_task WHERE status = #{status}
     </select>
 
     <!-- 查询未完成任务（排除终态） -->
-    <select id="findUnfinishedTasks" resultType="com.tgdownloader.entity.DownloadTask">
+    <select id="findUnfinishedTasks" resultMap="baseResultMap">
         SELECT * FROM download_task WHERE status NOT IN (${statuses})
     </select>
 
     <!-- 检查是否存在（去重） -->
     <select id="existsByChatIdAndMessageId" resultType="boolean">
-        SELECT COUNT(*) FROM download_task
+        SELECT COUNT(*) > 0 FROM download_task
         WHERE chat_id = #{chatId} AND message_id = #{messageId}
     </select>
 
-    <!-- 按状态计数（String 版，用于 XML 默认方法） -->
+    <!-- 按状态计数 -->
     <select id="countByStatusInStr" resultType="long">
         SELECT COUNT(*) FROM download_task WHERE status IN (${statuses})
     </select>
 
-    <!-- 按 ID 查询（Optional 包装） -->
-    <select id="findById" resultType="com.tgdownloader.entity.DownloadTask">
+    <!-- 按 ID 查询 -->
+    <select id="findById" resultMap="baseResultMap">
         SELECT * FROM download_task WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.tgdownloader.entity.DownloadTask" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO download_task (
+            message_id, chat_id, chat_title, file_name, file_size, mime_type, status,
+            local_path, error_message, remote_url, upload_status,
+            telegram_file_id, telegram_unique_file_id, downloaded_size, message_data,
+            chat_config_id, extra_data, is_stop_transmission,
+            started_at, finished_at, total_task, success_task, failed_task, skip_task,
+            download_speed, created_at, updated_at
+        ) VALUES (
+            #{messageId}, #{chatId}, #{chatTitle}, #{fileName}, #{fileSize}, #{mimeType}, #{status},
+            #{localPath}, #{errorMessage}, #{remoteUrl}, #{uploadStatus},
+            #{telegramFileId}, #{telegramUniqueFileId}, #{downloadedSize}, #{messageData},
+            #{chatConfigId}, #{extraData}, #{isStopTransmission},
+            #{startedAt}, #{finishedAt}, #{totalTask}, #{successTask}, #{failedTask}, #{skipTask},
+            #{downloadSpeed}, NOW(), NOW()
+        )
+    </insert>
+
+    <!-- 插入（非空字段） -->
+    <insert id="insertSelective" parameterType="com.tgdownloader.entity.DownloadTask" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO download_task (
+            message_id, chat_id, status
+            <if test="chatTitle != null">, chat_title</if>
+            <if test="fileName != null">, file_name</if>
+            <if test="fileSize != null">, file_size</if>
+            <if test="mimeType != null">, mime_type</if>
+            <if test="localPath != null">, local_path</if>
+            <if test="errorMessage != null">, error_message</if>
+            <if test="remoteUrl != null">, remote_url</if>
+            <if test="uploadStatus != null">, upload_status</if>
+            <if test="telegramFileId != null">, telegram_file_id</if>
+            <if test="telegramUniqueFileId != null">, telegram_unique_file_id</if>
+            <if test="downloadedSize != null">, downloaded_size</if>
+            <if test="messageData != null">, message_data</if>
+            <if test="chatConfigId != null">, chat_config_id</if>
+            <if test="extraData != null">, extra_data</if>
+            <if test="isStopTransmission != null">, is_stop_transmission</if>
+            <if test="startedAt != null">, started_at</if>
+            <if test="finishedAt != null">, finished_at</if>
+            <if test="totalTask != null">, total_task</if>
+            <if test="successTask != null">, success_task</if>
+            <if test="failedTask != null">, failed_task</if>
+            <if test="skipTask != null">, skip_task</if>
+            <if test="downloadSpeed != null">, download_speed</if>
+        ) VALUES (
+            #{messageId}, #{chatId}, #{status}
+            <if test="chatTitle != null">, #{chatTitle}</if>
+            <if test="fileName != null">, #{fileName}</if>
+            <if test="fileSize != null">, #{fileSize}</if>
+            <if test="mimeType != null">, #{mimeType}</if>
+            <if test="localPath != null">, #{localPath}</if>
+            <if test="errorMessage != null">, #{errorMessage}</if>
+            <if test="remoteUrl != null">, #{remoteUrl}</if>
+            <if test="uploadStatus != null">, #{uploadStatus}</if>
+            <if test="telegramFileId != null">, #{telegramFileId}</if>
+            <if test="telegramUniqueFileId != null">, #{telegramUniqueFileId}</if>
+            <if test="downloadedSize != null">, #{downloadedSize}</if>
+            <if test="messageData != null">, #{messageData}</if>
+            <if test="chatConfigId != null">, #{chatConfigId}</if>
+            <if test="extraData != null">, #{extraData}</if>
+            <if test="isStopTransmission != null">, #{isStopTransmission}</if>
+            <if test="startedAt != null">, #{startedAt}</if>
+            <if test="finishedAt != null">, #{finishedAt}</if>
+            <if test="totalTask != null">, #{totalTask}</if>
+            <if test="successTask != null">, #{successTask}</if>
+            <if test="failedTask != null">, #{failedTask}</if>
+            <if test="skipTask != null">, #{skipTask}</if>
+            <if test="downloadSpeed != null">, #{downloadSpeed}</if>
+        )
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.tgdownloader.entity.DownloadTask">
+        UPDATE download_task SET
+            message_id = #{messageId},
+            chat_id = #{chatId},
+            chat_title = #{chatTitle},
+            file_name = #{fileName},
+            file_size = #{fileSize},
+            mime_type = #{mimeType},
+            status = #{status},
+            local_path = #{localPath},
+            error_message = #{errorMessage},
+            remote_url = #{remoteUrl},
+            upload_status = #{uploadStatus},
+            telegram_file_id = #{telegramFileId},
+            telegram_unique_file_id = #{telegramUniqueFileId},
+            downloaded_size = #{downloadedSize},
+            message_data = #{messageData},
+            chat_config_id = #{chatConfigId},
+            extra_data = #{extraData},
+            is_stop_transmission = #{isStopTransmission},
+            started_at = #{startedAt},
+            finished_at = #{finishedAt},
+            total_task = #{totalTask},
+            success_task = #{successTask},
+            failed_task = #{failedTask},
+            skip_task = #{skipTask},
+            download_speed = #{downloadSpeed},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除 -->
+    <delete id="deleteById">
+        DELETE FROM download_task WHERE id = #{id}
+    </delete>
+
+    <!-- 全量计数 -->
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM download_task
     </select>
 
 </mapper>

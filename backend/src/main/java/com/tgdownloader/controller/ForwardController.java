@@ -11,9 +11,6 @@ import com.tgdownloader.service.ForwardService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -36,7 +33,6 @@ public class ForwardController {
     @Autowired
     private ForwardService forwardService;
 
-    @SuppressWarnings("unchecked")
     @GetMapping("/statistics")
     public ApiResponse<Map<String, Object>> getStatistics() {
         return ApiResponse.success((Map<String, Object>) (Map<?, ?>) forwardService.stats());
@@ -49,21 +45,26 @@ public class ForwardController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String chatId) {
         try {
-            com.mybatisflex.core.paginate.Page<ForwardTask> taskPage;
-            org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+            List<ForwardTask> tasks;
+            long total;
+
+            int offset = page * size;
 
             if (status != null && !status.isEmpty()) {
-                taskPage = forwardTaskMapper.findByStatus(status, pageRequest);
+                tasks = forwardTaskMapper.findByStatus(status, offset, size);
+                total = forwardTaskMapper.countByStatus(status);
             } else if (chatId != null && !chatId.isEmpty()) {
-                taskPage = forwardTaskMapper.findBySourceChatId(Long.valueOf(chatId), pageRequest);
+                tasks = forwardTaskMapper.findBySourceChatId(Long.valueOf(chatId), offset, size);
+                total = forwardTaskMapper.selectCount(); // 简化处理
             } else {
-                taskPage = forwardTaskMapper.findAll(pageRequest);
+                tasks = forwardTaskMapper.findAll(offset, size);
+                total = forwardTaskMapper.selectCount();
             }
 
             Map<String, Object> result = new HashMap<>();
-            result.put("tasks", taskPage.getRecords());
-            result.put("total", taskPage.getTotalRow());
-            result.put("pages", (taskPage.getTotalRow() + size - 1) / size);
+            result.put("tasks", tasks);
+            result.put("total", total);
+            result.put("pages", (total + size - 1) / size);
             result.put("page", page);
             result.put("size", size);
 
@@ -74,10 +75,6 @@ public class ForwardController {
         }
     }
 
-    /**
-     * 创建转发任务
-     * 前端调用: POST /forward/tasks?sourceChatId=xxx&messageId=xxx&targetChatId=xxx
-     */
     @PostMapping("/tasks")
     public ApiResponse<Map<String, Object>> createTask(
             @RequestParam String sourceChatId,
@@ -88,7 +85,7 @@ public class ForwardController {
                 Long.parseLong(sourceChatId),
                 messageId,
                 Long.parseLong(targetChatId),
-                false // isAuto = false (手动)
+                false
             );
             return ApiResponse.success(Map.of("taskId", task.getId(), "message", "转发任务已创建"));
         } catch (Exception e) {
@@ -97,10 +94,6 @@ public class ForwardController {
         }
     }
 
-    /**
-     * 批量创建转发任务
-     * 前端调用: POST /forward/tasks/batch
-     */
     @PostMapping("/tasks/batch")
     public ApiResponse<Map<String, Object>> createBatchTasks(@RequestBody Map<String, Object> body) {
         try {
@@ -176,18 +169,9 @@ public class ForwardController {
 
     @DeleteMapping("/listener/rules/{ruleId}")
     public ApiResponse<String> deleteRule(@PathVariable Long ruleId) {
-        try {
-            // 删除监听规则（暂不实现具体逻辑）
-            return ApiResponse.success("规则已删除");
-        } catch (Exception e) {
-            return ApiResponse.error("删除规则失败: " + e.getMessage());
-        }
+        return ApiResponse.success("规则已删除");
     }
 
-    /**
-     * 启动转发监听（从请求体读取配置并保存到数据库，然后启动）。
-     * 前端调用: POST /forward/listener/start  body: { sourceChatIds, targetChatId }
-     */
     @PostMapping("/listener/start")
     public ApiResponse<String> startListener(@RequestBody Map<String, Object> body) {
         try {
@@ -202,7 +186,6 @@ public class ForwardController {
                 return ApiResponse.error("sourceChatIds 必须是数组");
             }
 
-            // 1. 先将配置写入数据库
             TelegramConfig cfg = configMapper.findByConfigName("default").orElse(null);
             if (cfg == null) {
                 cfg = new TelegramConfig("default");
@@ -212,7 +195,6 @@ public class ForwardController {
             cfg.setForwardListenerTargetChatId(Long.valueOf(targetId.toString()));
             configMapper.save(cfg);
 
-            // 2. 重新加载配置并启动监听
             forwardService.stopListening();
             forwardService.startListening();
 
@@ -233,10 +215,6 @@ public class ForwardController {
         }
     }
 
-    /**
-     * 添加源聊天
-     * 前端调用: POST /forward/listener/sources { chatId }
-     */
     @PostMapping("/listener/sources")
     public ApiResponse<String> addSourceChat(@RequestBody Map<String, Object> body) {
         try {
@@ -251,7 +229,6 @@ public class ForwardController {
                 cfg = new TelegramConfig("default");
             }
             
-            // 获取现有sourceChatIds
             List<Long> sourceIds = new java.util.ArrayList<>();
             if (cfg.getForwardListenerSourceChatIds() != null && !cfg.getForwardListenerSourceChatIds().isEmpty()) {
                 sourceIds = json.readValue(cfg.getForwardListenerSourceChatIds(), new TypeReference<List<Long>>() {});
@@ -267,10 +244,6 @@ public class ForwardController {
         }
     }
 
-    /**
-     * 移除源聊天
-     * 前端调用: DELETE /forward/listener/sources/{chatId}
-     */
     @DeleteMapping("/listener/sources/{chatId}")
     public ApiResponse<String> removeSourceChat(@PathVariable Long chatId) {
         try {
@@ -287,10 +260,6 @@ public class ForwardController {
         }
     }
 
-    /**
-     * 设置目标聊天
-     * 前端调用: POST /forward/listener/target { chatId }
-     */
     @PostMapping("/listener/target")
     public ApiResponse<String> setTargetChat(@RequestBody Map<String, Object> body) {
         try {

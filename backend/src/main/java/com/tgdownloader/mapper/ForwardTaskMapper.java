@@ -1,50 +1,74 @@
 package com.tgdownloader.mapper;
 
-import com.mybatisflex.core.BaseMapper;
-import com.mybatisflex.core.paginate.Page;
 import com.tgdownloader.entity.ForwardTask;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * ForwardTask Mapper - XML 版
+ * ForwardTask Mapper - XML 版（原生 MyBatis）
  */
-public interface ForwardTaskMapper extends BaseMapper<ForwardTask> {
+@Mapper
+public interface ForwardTaskMapper {
 
-    Page<ForwardTask> findByStatus(@Param("status") String status, int pageNum, int pageSize);
+    /** 按状态查询 */
+    List<ForwardTask> findByStatus(@Param("status") String status, @Param("offset") int offset, @Param("limit") int limit);
 
-    Page<ForwardTask> findBySourceChatId(@Param("sourceChatId") Long sourceChatId, int pageNum, int pageSize);
+    /** 按状态查询（不分页） */
+    default List<ForwardTask> findByStatus(String status) {
+        return findByStatus(status, 0, Integer.MAX_VALUE);
+    }
 
-    Page<ForwardTask> findAll(int pageNum, int pageSize);
+    /** 按源chatId查询 */
+    List<ForwardTask> findBySourceChatId(@Param("sourceChatId") Long sourceChatId, @Param("offset") int offset, @Param("limit") int limit);
 
-    long countByStatus(@Param("status") String status);
+    /** 按源chatId查询（不分页） */
+    default List<ForwardTask> findBySourceChatId(Long sourceChatId) {
+        return findBySourceChatId(sourceChatId, 0, Integer.MAX_VALUE);
+    }
 
+    /** 全量查询（不分页） */
+    List<ForwardTask> findAllNoPage();
+
+    /** 全量计数 */
     long selectCount();
 
-    ForwardTask selectById(Long id);
+    /** 全量分页 */
+    List<ForwardTask> findAll(@Param("offset") int offset, @Param("limit") int limit);
 
+    /** 按状态计数 */
+    long countByStatus(@Param("status") String status);
+
+    /** 按主键查询 */
+    ForwardTask selectById(@Param("id") Long id);
+
+    /** 检查是否已存在（用于去重） */
     boolean existsBySourceChatIdAndMessageIdAndTargetChatId(
             @Param("sourceChatId") Long sourceChatId,
             @Param("messageId") Long messageId,
             @Param("targetChatId") Long targetChatId);
 
-    // ── Spring Data PageRequest 适配 ────────────────────────────────────
+    // ── CRUD ────────────────────────────────────────────────────────────────
 
-    default Page<ForwardTask> findByStatus(String status, org.springframework.data.domain.PageRequest pageRequest) {
-        return findByStatus(status, pageRequest.getPageNumber(), pageRequest.getPageSize());
-    }
+    void insert(ForwardTask entity);
 
-    default Page<ForwardTask> findBySourceChatId(Long sourceChatId, org.springframework.data.domain.PageRequest pageRequest) {
-        return findBySourceChatId(sourceChatId, pageRequest.getPageNumber(), pageRequest.getPageSize());
-    }
+    void update(ForwardTask entity);
 
-    default Page<ForwardTask> findAll(org.springframework.data.domain.PageRequest pageRequest) {
-        return findAll(pageRequest.getPageNumber(), pageRequest.getPageSize());
-    }
+    void insertSelective(ForwardTask entity);
+
+    void deleteById(@Param("id") Long id);
 
     default ForwardTask save(ForwardTask entity) {
-        insertOrUpdate(entity);
+        if (entity.getId() == null) {
+            insertSelective(entity);
+        } else {
+            update(entity);
+        }
         return entity;
+    }
+
+    default List<ForwardTask> selectAll() {
+        return findAllNoPage();
     }
 }

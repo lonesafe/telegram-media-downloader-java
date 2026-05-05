@@ -1,53 +1,28 @@
 package com.tgdownloader.entity;
 
-import com.mybatisflex.annotation.Column;
-import com.mybatisflex.annotation.Id;
-import com.mybatisflex.annotation.KeyType;
-import com.mybatisflex.annotation.Table;
-import lombok.Data;
-import lombok.ToString;
-
 import java.time.LocalDateTime;
 
 /**
  * 聊天配置实体
  */
-@Table("chat_config")
 public class ChatConfig {
 
-    @Id(keyType = KeyType.Auto)
     private Long id;
-    @Column("chat_id")
     private String chatId;
-    @Column("title")
     private String title;
-    @Column("type")
     private String type;
-    @Column("enabled")
     private Boolean enabled = true;
-    @Column("filter_type")
     private String filterType;
-    @Column("auto_delete_after_hours")
     private Integer autoDeleteAfterHours;
-    @Column("file_name_template")
     private String fileNameTemplate;
-    @Column("download_path")
     private String downloadPath;
-    @Column("remote_path")
     private String remotePath;
-    @Column("upload_after_download")
     private Boolean uploadAfterDownload = false;
-    @Column("notify_after_download")
     private Boolean notifyAfterDownload = true;
-    @Column("forward_to_chat_id")
     private Long forwardToChatId;
-    @Column("extra_data")
     private String extraData;
-    @Column("username")
     private String username;
-    @Column("created_at")
     private LocalDateTime createdAt;
-    @Column("updated_at")
     private LocalDateTime updatedAt;
 
     // ── Getter / Setter ─────────────────────────────────────────────────────

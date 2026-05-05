@@ -3,19 +3,42 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.tgdownloader.mapper.ForwardTaskMapper">
 
-    <!-- 按状态分页 -->
-    <select id="findByStatus" resultType="com.tgdownloader.entity.ForwardTask">
+    <!-- ResultMap -->
+    <resultMap id="baseResultMap" type="com.tgdownloader.entity.ForwardTask">
+        <id column="id" property="id"/>
+        <result column="source_chat_id" property="sourceChatId"/>
+        <result column="source_chat_title" property="sourceChatTitle"/>
+        <result column="message_id" property="messageId"/>
+        <result column="target_chat_id" property="targetChatId"/>
+        <result column="target_chat_title" property="targetChatTitle"/>
+        <result column="status" property="status"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="is_auto_forward" property="isAutoForward"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 按状态查询（分页） -->
+    <select id="findByStatus" resultMap="baseResultMap">
         SELECT * FROM forward_task WHERE status = #{status} ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- 按源chatId分页 -->
-    <select id="findBySourceChatId" resultType="com.tgdownloader.entity.ForwardTask">
+    <!-- 按源chatId查询（分页） -->
+    <select id="findBySourceChatId" resultMap="baseResultMap">
         SELECT * FROM forward_task WHERE source_chat_id = #{sourceChatId} ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- 全量分页 -->
-    <select id="findAll" resultType="com.tgdownloader.entity.ForwardTask">
+    <!-- 全量查询（不分页） -->
+    <select id="findAllNoPage" resultMap="baseResultMap">
         SELECT * FROM forward_task ORDER BY id DESC
+    </select>
+
+    <!-- 全量分页查询 -->
+    <select id="findAll" resultMap="baseResultMap">
+        SELECT * FROM forward_task ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <!-- 按状态计数 -->
@@ -29,16 +52,64 @@
     </select>
 
     <!-- 按主键查询 -->
-    <select id="selectById" resultType="com.tgdownloader.entity.ForwardTask">
+    <select id="selectById" resultMap="baseResultMap">
         SELECT * FROM forward_task WHERE id = #{id} LIMIT 1
     </select>
 
-    <!-- 检查是否已存在（用于去重） -->
+    <!-- 检查是否已存在 -->
     <select id="existsBySourceChatIdAndMessageIdAndTargetChatId" resultType="boolean">
-        SELECT COUNT(*) FROM forward_task
+        SELECT COUNT(*) > 0 FROM forward_task
         WHERE source_chat_id = #{sourceChatId}
           AND message_id = #{messageId}
           AND target_chat_id = #{targetChatId}
     </select>
+
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.tgdownloader.entity.ForwardTask" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO forward_task (
+            source_chat_id, source_chat_title, message_id, target_chat_id, target_chat_title,
+            status, error_message, is_auto_forward, created_at, updated_at
+        ) VALUES (
+            #{sourceChatId}, #{sourceChatTitle}, #{messageId}, #{targetChatId}, #{targetChatTitle},
+            #{status}, #{errorMessage}, #{isAutoForward}, NOW(), NOW()
+        )
+    </insert>
+
+    <!-- 插入（非空字段） -->
+    <insert id="insertSelective" parameterType="com.tgdownloader.entity.ForwardTask" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO forward_task (
+            source_chat_id, message_id, target_chat_id, status
+            <if test="sourceChatTitle != null">, source_chat_title</if>
+            <if test="targetChatTitle != null">, target_chat_title</if>
+            <if test="errorMessage != null">, error_message</if>
+            <if test="isAutoForward != null">, is_auto_forward</if>
+        ) VALUES (
+            #{sourceChatId}, #{messageId}, #{targetChatId}, #{status}
+            <if test="sourceChatTitle != null">, #{sourceChatTitle}</if>
+            <if test="targetChatTitle != null">, #{targetChatTitle}</if>
+            <if test="errorMessage != null">, #{errorMessage}</if>
+            <if test="isAutoForward != null">, #{isAutoForward}</if>
+        )
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.tgdownloader.entity.ForwardTask">
+        UPDATE forward_task SET
+            source_chat_id = #{sourceChatId},
+            source_chat_title = #{sourceChatTitle},
+            message_id = #{messageId},
+            target_chat_id = #{targetChatId},
+            target_chat_title = #{targetChatTitle},
+            status = #{status},
+            error_message = #{errorMessage},
+            is_auto_forward = #{isAutoForward},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除 -->
+    <delete id="deleteById">
+        DELETE FROM forward_task WHERE id = #{id}
+    </delete>
 
 </mapper>

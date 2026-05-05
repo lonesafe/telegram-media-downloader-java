@@ -86,7 +86,7 @@ public class ConfigController {
 
     @PutMapping("/chats/{id}")
     public ApiResponse<ChatConfigDto> updateChat(@PathVariable Long id, @RequestBody ChatConfigDto dto) {
-        ChatConfig existing = chatConfigMapper.findById(id);
+        ChatConfig existing = chatConfigMapper.findById(id).orElse(null);
         if (existing == null) throw new RuntimeException("Chat not found: " + id);
         BeanUtils.copyProperties(dto, existing, "id", "createdAt");
         return ApiResponse.success(toDto(chatConfigMapper.save(existing)));

@@ -1,18 +1,9 @@
 package com.tgdownloader.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.mybatisflex.annotation.Column;
-import com.mybatisflex.annotation.Id;
-import com.mybatisflex.annotation.KeyType;
-import com.mybatisflex.annotation.Table;
-import lombok.Data;
+import it.tdlight.jni.TdApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.tomcat.util.codec.binary.Base64;
-import it.tdlight.jni.TdApi;
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
 
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
@@ -20,95 +11,37 @@ import java.time.LocalDateTime;
 /**
  * 下载任务实体
  */
-@Table("download_task")
 public class DownloadTask {
 
     private static final Logger log = LoggerFactory.getLogger(DownloadTask.class);
 
-    @Id(keyType = KeyType.Auto)
     private Long id;
-
-    @Column("message_id")
     private Long messageId;
-
-    @Column("chat_id")
     private String chatId;
-
-    @Column("chat_title")
     private String chatTitle;
-
-    @Column("file_name")
     private String fileName;
-
-    @Column("file_size")
     private Long fileSize;
-
-    @Column("mime_type")
     private String mimeType;
-
-    @Column("status")
     private String status = "PENDING";
-
-    @Column("local_path")
     private String localPath;
-
-    @Column("error_message")
     private String errorMessage;
-
-    @Column("remote_url")
     private String remoteUrl;
-
-    @Column("upload_status")
     private String uploadStatus;
-
-    @Column("telegram_file_id")
     private String telegramFileId;
-
-    @Column("telegram_unique_file_id")
     private String telegramUniqueFileId;
-
-    @Column("downloaded_size")
     private Long downloadedSize;
-
-    /** Kryo 序列化后的 BLOB 数据（对应 MySQL MEDIUMBLOB） */
-    @Column("message_data")
     private byte[] messageData;
-
-    /** 外键 ID（替代 JPA @ManyToOne，关联查询由 Mapper 处理） */
-    @Column("chat_config_id")
     private Long chatConfigId;
-
-    @Column("extra_data")
     private String extraData;
-
-    @Column("is_stop_transmission")
     private Boolean isStopTransmission = false;
-
-    @Column("started_at")
     private LocalDateTime startedAt;
-
-    @Column("finished_at")
     private LocalDateTime finishedAt;
-
-    @Column("total_task")
     private Integer totalTask = 0;
-
-    @Column("success_task")
     private Integer successTask = 0;
-
-    @Column("failed_task")
     private Integer failedTask = 0;
-
-    @Column("skip_task")
     private Integer skipTask = 0;
-
-    @Column("download_speed")
     private Double downloadSpeed = 0.0;
-
-    @Column("created_at")
     private LocalDateTime createdAt;
-
-    @Column("updated_at")
     private LocalDateTime updatedAt;
 
     // ── 内存缓存，不持久化 ─────────────────────────────────────────────────────
@@ -176,8 +109,8 @@ public class DownloadTask {
     public void setCachedMessage(TdApi.Message cachedMessage) { this.cachedMessage = cachedMessage; }
 
     // ── TdApi.Message Kryo 序列化 ─────────────────────────────────────────────
-    private static final ThreadLocal<Kryo> kryoLocal = ThreadLocal.withInitial(() -> {
-        Kryo kryo = new Kryo();
+    private static final ThreadLocal<com.esotericsoftware.kryo.Kryo> kryoLocal = ThreadLocal.withInitial(() -> {
+        com.esotericsoftware.kryo.Kryo kryo = new com.esotericsoftware.kryo.Kryo();
         kryo.setRegistrationRequired(false);
         return kryo;
     });
@@ -204,7 +137,7 @@ public class DownloadTask {
 
     private static byte[] serialize(Object obj) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-             Output output = new Output(baos)) {
+             com.esotericsoftware.kryo.io.Output output = new com.esotericsoftware.kryo.io.Output(baos)) {
             kryoLocal.get().writeObject(output, obj);
             output.flush();
             return baos.toByteArray();
@@ -215,7 +148,7 @@ public class DownloadTask {
 
     private static <T> T deserialize(byte[] data, Class<T> clazz) {
         if (data == null) return null;
-        try (Input input = new Input(data)) {
+        try (com.esotericsoftware.kryo.io.Input input = new com.esotericsoftware.kryo.io.Input(data)) {
             return kryoLocal.get().readObject(input, clazz);
         } catch (Exception e) {
             throw new RuntimeException("Kryo反序列化失败", e);

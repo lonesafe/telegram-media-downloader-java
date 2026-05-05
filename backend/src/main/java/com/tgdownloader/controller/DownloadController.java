@@ -10,12 +10,9 @@ import com.tgdownloader.service.DownloadCoreService;
 import com.tgdownloader.service.TelegramClientService;
 import com.tgdownloader.util.ByteFormatUtil;
 import com.tgdownloader.util.TelegramUtils;
-import it.tdlight.jni.TdApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -24,7 +21,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 涓嬭浇绠＄悊 Controller - 鏃?Lombok 鐗堟湰
+ * 下载管理 Controller
  */
 @RestController
 @RequestMapping("/api/download")
@@ -47,56 +44,50 @@ public class DownloadController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        com.mybatisflex.core.paginate.Page<DownloadTask> taskPage;
-        org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<DownloadTask> tasks;
+        long total;
 
-        taskPage = switch (tab) {
-            case "downloading" ->
-                // 正在下载：DOWNLOADING
-                    downloadTaskMapper.findByStatusIn(
-                            List.of(DownloadStatus.DOWNLOADING.name()),
-                            pageRequest);
-            case "waiting" ->
-                // 等待中：QUEUED（已在队列排队）+ PENDING（已暂停）
-                    downloadTaskMapper.findByStatusIn(
-                            List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()),
-                            pageRequest);
-            case "paused" ->
-                // 已暂停：PAUSED（用户手动停止）
-                    downloadTaskMapper.findByStatusIn(
-                            List.of(DownloadStatus.PAUSED.name()),
-                            pageRequest);
-            case "skipped" ->
-                // 已跳过：SKIP_DOWNLOAD（文件已存在或被过滤规则排除）
-                    downloadTaskMapper.findByStatusIn(
-                            List.of(DownloadStatus.SKIP_DOWNLOAD.name()),
-                            pageRequest);
-            case "completed" ->
-                // 下载完成：SUCCESS_DOWNLOAD
-                    downloadTaskMapper.findByStatusIn(
-                            List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()),
-                            pageRequest);
-            case "failed" ->
-                // 下载失败：FAILED_DOWNLOAD（可重试）
-                    downloadTaskMapper.findByStatusIn(
-                            List.of(DownloadStatus.FAILED_DOWNLOAD.name()),
-                            pageRequest);
-            default ->
-                // all: 全部任务
-                    downloadTaskMapper.findAll(pageRequest);
-        };
+        switch (tab) {
+            case "downloading" -> {
+                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()), page, size);
+                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
+            }
+            case "waiting" -> {
+                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()), page, size);
+                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
+            }
+            case "paused" -> {
+                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.PAUSED.name()), page, size);
+                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
+            }
+            case "skipped" -> {
+                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()), page, size);
+                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
+            }
+            case "completed" -> {
+                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()), page, size);
+                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
+            }
+            case "failed" -> {
+                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()), page, size);
+                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
+            }
+            default -> {
+                tasks = downloadTaskMapper.findAll();
+                total = downloadTaskMapper.countAll();
+            }
+        }
 
         // 获取实时速度
         Map<Long, Long> taskSpeeds = downloadCoreService.getAllTaskSpeeds();
 
-        List<Map<String, Object>> result = taskPage.getRecords().stream()
+        List<Map<String, Object>> result = tasks.stream()
                 .map(task -> toMap(task, taskSpeeds.get(task.getId())))
                 .collect(Collectors.toList());
 
         // 统计各选项卡数量
         long downloadingCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
-        long waitingCount = downloadTaskMapper.countByStatusIn(
-                List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
+        long waitingCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
         long pausedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
         long skippedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
         long completedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
@@ -104,11 +95,10 @@ public class DownloadController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("list", result);
-        response.put("total", taskPage.getTotalRow());
+        response.put("total", total);
         response.put("page", page);
         response.put("size", size);
-        response.put("pages", (taskPage.getTotalRow() + size - 1) / size);
-        // 各选项卡计数
+        response.put("pages", (total + size - 1) / size);
         response.put("downloadingCount", downloadingCount);
         response.put("waitingCount", waitingCount);
         response.put("pausedCount", pausedCount);
@@ -129,15 +119,17 @@ public class DownloadController {
         speed.put("upload_speed", progress.getUploadSpeed());
         speed.put("total_downloaded", progress.getTotalDownloaded());
         speed.put("total_uploaded", progress.getTotalUploaded());
-        speed.put("task_speeds", taskSpeeds); // 每个任务的实时速度
+        speed.put("task_speeds", taskSpeeds);
 
         return ApiResponse.success(speed);
     }
 
     @PostMapping("/stop/{taskId}")
     public ApiResponse<Void> stopTask(@PathVariable Long taskId) {
-        DownloadTask task = downloadTaskMapper.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
+        DownloadTask task = downloadTaskMapper.findById(taskId);
+        if (task == null) {
+            throw new RuntimeException("Task not found: " + taskId);
+        }
 
         task.setIsStopTransmission(true);
         task.setStatus(DownloadStatus.PAUSED.name());
@@ -150,24 +142,26 @@ public class DownloadController {
 
     @PostMapping("/resume/{taskId}")
     public ApiResponse<Void> resumeTask(@PathVariable Long taskId) {
-        DownloadTask task = downloadTaskMapper.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
+        DownloadTask task = downloadTaskMapper.findById(taskId);
+        if (task == null) {
+            throw new RuntimeException("Task not found: " + taskId);
+        }
 
         task.setIsStopTransmission(false);
         task.setFinishedAt(null);
-        // 标记为 PENDING，resumeAll 会把它们重新加入队列
         task.setStatus(DownloadStatus.PENDING.name());
         telegramUtils.saveTask(task);
 
-        // 立即将 PENDING 任务加入队列
         downloadCoreService.startDownload(task);
         return ApiResponse.success();
     }
 
     @GetMapping("/status/{taskId}")
     public ApiResponse<Map<String, Object>> getStatus(@PathVariable Long taskId) {
-        DownloadTask task = downloadTaskMapper.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
+        DownloadTask task = downloadTaskMapper.findById(taskId);
+        if (task == null) {
+            throw new RuntimeException("Task not found: " + taskId);
+        }
 
         return ApiResponse.success(toMap(task));
     }
@@ -195,10 +189,6 @@ public class DownloadController {
         return ApiResponse.success();
     }
 
-    /**
-     * 设置下载状态（暂停/继续全部任务）
-     * 前端调用: POST /download/state?state=pause 或 ?state=continue
-     */
     @PostMapping("/state")
     public ApiResponse<Void> setState(@RequestParam String state) {
         try {
@@ -214,25 +204,18 @@ public class DownloadController {
         }
     }
 
-    /**
-     * 创建下载任务
-     * 前端调用: POST /download/task
-     */
     @PostMapping("/task")
     public ApiResponse<Map<String, Object>> createTask(@RequestBody DownloadTaskRequest request) {
         try {
-            // 使用 chatLink 解析 chatId 和 messageId
             String chatLink = request.getChatLink();
             if (chatLink == null || chatLink.isEmpty()) {
                 return ApiResponse.error("chatLink 不能为空");
             }
             
-            // 解析链接获取 chatId 和 messageId
             Map<String, Object> parsed = telegramClientService.parseMessageLink(chatLink);
             long chatId = (long) parsed.get("chatId");
             long messageId = (long) parsed.get("messageId");
             
-            // 创建任务
             DownloadTask task = new DownloadTask();
             task.setChatId(String.valueOf(chatId));
             task.setMessageId(messageId);
@@ -258,12 +241,6 @@ public class DownloadController {
         return toMap(task, null);
     }
 
-    /**
-     * 转换任务为 Map，包含实时速度
-     *
-     * @param task          任务
-     * @param realtimeSpeed 实时速度（bytes/s），如果为 null 则使用数据库中的速度
-     */
     private Map<String, Object> toMap(DownloadTask task, Long realtimeSpeed) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", task.getId());
@@ -276,11 +253,10 @@ public class DownloadController {
         map.put("fileSize", task.getFileSize());
         map.put("downloadedSize", task.getDownloadedSize());
 
-        // 优先使用实时速度，否则使用数据库中的速度
         long speed = realtimeSpeed != null ? realtimeSpeed
                 : (task.getDownloadSpeed() != null ? task.getDownloadSpeed().longValue() : 0L);
         map.put("downloadSpeed", ByteFormatUtil.format(speed) + "/s");
-        map.put("downloadSpeedRaw", speed); // 原始数值，供前端使用
+        map.put("downloadSpeedRaw", speed);
 
         int progress = 0;
         if (task.getFileSize() != null && task.getFileSize() > 0
@@ -289,7 +265,7 @@ public class DownloadController {
         }
         map.put("downloadProgress", progress);
         map.put("status", task.getStatus());
-        map.put("isRunning", DownloadStatus.DOWNLOADING.name().equals(task.getStatus())); // 实时计算
+        map.put("isRunning", DownloadStatus.DOWNLOADING.name().equals(task.getStatus()));
         map.put("isStopTransmission", task.getIsStopTransmission());
         map.put("createdAt", task.getCreatedAt());
         map.put("updatedAt", task.getUpdatedAt());

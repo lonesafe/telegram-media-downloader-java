@@ -3,23 +3,81 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.tgdownloader.mapper.ChatConfigMapper">
 
+    <!-- ResultMap -->
+    <resultMap id="baseResultMap" type="com.tgdownloader.entity.ChatConfig">
+        <id column="id" property="id"/>
+        <result column="chat_id" property="chatId"/>
+        <result column="title" property="title"/>
+        <result column="type" property="type"/>
+        <result column="enabled" property="enabled"/>
+        <result column="filter_type" property="filterType"/>
+        <result column="auto_delete_after_hours" property="autoDeleteAfterHours"/>
+        <result column="file_name_template" property="fileNameTemplate"/>
+        <result column="download_path" property="downloadPath"/>
+        <result column="remote_path" property="remotePath"/>
+        <result column="upload_after_download" property="uploadAfterDownload"/>
+        <result column="notify_after_download" property="notifyAfterDownload"/>
+        <result column="forward_to_chat_id" property="forwardToChatId"/>
+        <result column="extra_data" property="extraData"/>
+        <result column="username" property="username"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
     <!-- 按 chatId 查询 -->
-    <select id="findByChatId" resultType="com.tgdownloader.entity.ChatConfig">
+    <select id="findByChatId" resultMap="baseResultMap">
         SELECT * FROM chat_config WHERE chat_id = #{chatId} LIMIT 1
     </select>
 
     <!-- 按主键查询 -->
-    <select id="findById" resultType="com.tgdownloader.entity.ChatConfig">
+    <select id="findById" resultMap="baseResultMap">
         SELECT * FROM chat_config WHERE id = #{id} LIMIT 1
     </select>
 
     <!-- 全量查询 -->
-    <select id="findAll" resultType="com.tgdownloader.entity.ChatConfig">
+    <select id="findAll" resultMap="baseResultMap">
         SELECT * FROM chat_config
     </select>
 
-    <select id="countAll" resultType="long">
-        SELECT COUNT(*) FROM chat_config
-    </select>
+    <!-- 插入 -->
+    <insert id="insert" parameterType="com.tgdownloader.entity.ChatConfig" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO chat_config (
+            chat_id, title, type, enabled, filter_type,
+            auto_delete_after_hours, file_name_template, download_path, remote_path,
+            upload_after_download, notify_after_download, forward_to_chat_id,
+            extra_data, username, created_at, updated_at
+        ) VALUES (
+            #{chatId}, #{title}, #{type}, #{enabled}, #{filterType},
+            #{autoDeleteAfterHours}, #{fileNameTemplate}, #{downloadPath}, #{remotePath},
+            #{uploadAfterDownload}, #{notifyAfterDownload}, #{forwardToChatId},
+            #{extraData}, #{username}, NOW(), NOW()
+        )
+    </insert>
+
+    <!-- 更新 -->
+    <update id="update" parameterType="com.tgdownloader.entity.ChatConfig">
+        UPDATE chat_config SET
+            chat_id = #{chatId},
+            title = #{title},
+            type = #{type},
+            enabled = #{enabled},
+            filter_type = #{filterType},
+            auto_delete_after_hours = #{autoDeleteAfterHours},
+            file_name_template = #{fileNameTemplate},
+            download_path = #{downloadPath},
+            remote_path = #{remotePath},
+            upload_after_download = #{uploadAfterDownload},
+            notify_after_download = #{notifyAfterDownload},
+            forward_to_chat_id = #{forwardToChatId},
+            extra_data = #{extraData},
+            username = #{username},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- 删除 -->
+    <delete id="deleteById">
+        DELETE FROM chat_config WHERE id = #{id}
+    </delete>
 
 </mapper>
