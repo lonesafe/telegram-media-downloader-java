@@ -49,28 +49,28 @@ public class DownloadController {
 
         switch (tab) {
             case "downloading" -> {
-                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()), page, size);
-                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
+                tasks = downloadTaskMapper.findByStatuses(List.of(DownloadStatus.DOWNLOADING.name()), page, size);
+                total = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.DOWNLOADING.name()));
             }
             case "waiting" -> {
-                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()), page, size);
-                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
+                tasks = downloadTaskMapper.findByStatuses(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()), page, size);
+                total = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
             }
             case "paused" -> {
-                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.PAUSED.name()), page, size);
-                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
+                tasks = downloadTaskMapper.findByStatuses(List.of(DownloadStatus.PAUSED.name()), page, size);
+                total = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.PAUSED.name()));
             }
             case "skipped" -> {
-                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()), page, size);
-                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
+                tasks = downloadTaskMapper.findByStatuses(List.of(DownloadStatus.SKIP_DOWNLOAD.name()), page, size);
+                total = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
             }
             case "completed" -> {
-                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()), page, size);
-                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
+                tasks = downloadTaskMapper.findByStatuses(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()), page, size);
+                total = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
             }
             case "failed" -> {
-                tasks = downloadTaskMapper.findByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()), page, size);
-                total = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
+                tasks = downloadTaskMapper.findByStatuses(List.of(DownloadStatus.FAILED_DOWNLOAD.name()), page, size);
+                total = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
             }
             default -> {
                 tasks = downloadTaskMapper.findAll();
@@ -86,12 +86,12 @@ public class DownloadController {
                 .collect(Collectors.toList());
 
         // 统计各选项卡数量
-        long downloadingCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
-        long waitingCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
-        long pausedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.PAUSED.name()));
-        long skippedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
-        long completedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
-        long failedCount = downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
+        long downloadingCount = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.DOWNLOADING.name()));
+        long waitingCount = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.QUEUED.name(), DownloadStatus.PENDING.name()));
+        long pausedCount = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.PAUSED.name()));
+        long skippedCount = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.SKIP_DOWNLOAD.name()));
+        long completedCount = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.SUCCESS_DOWNLOAD.name()));
+        long failedCount = downloadTaskMapper.countByStatuses(List.of(DownloadStatus.FAILED_DOWNLOAD.name()));
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("list", result);
@@ -179,7 +179,7 @@ public class DownloadController {
 
     @DeleteMapping("/completed")
     public ApiResponse<Void> clearCompleted() {
-        List<DownloadTask> completed = downloadTaskMapper.findByStatusIn(
+        List<DownloadTask> completed = downloadTaskMapper.findByStatuses(
                 List.of(DownloadStatus.SUCCESS_DOWNLOAD.name(),
                         DownloadStatus.SKIP_DOWNLOAD.name(),
                         DownloadStatus.FAILED_DOWNLOAD.name()));

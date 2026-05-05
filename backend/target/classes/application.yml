@@ -18,14 +18,15 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
 
-  # MyBatis-Flex 配置
-  mybatis-flex:
-    entity:
-      # Kryo 序列化的 BLOB 字段按 byte[] 处理（MySQL MEDIUMBLOB）
-      decimal-type: bigdecimal
-    mapper:
-      # XML mapper 文件位置
-      locations: classpath:mapper/**/*.xml
+  # 原生 MyBatis 配置
+  mybatis:
+    mapper-locations: classpath:mapper/**/*.xml
+    type-aliases-package: com.tgdownloader.entity
+    configuration:
+      map-underscore-to-camel-case: true
+      default-fetch-size: 100
+      default-statement-timeout: 30
+
   sql:
     init:
       mode: never

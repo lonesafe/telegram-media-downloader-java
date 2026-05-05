@@ -252,7 +252,7 @@ public class DownloadCoreService {
         paused.set(false);
         log.info("已恢复所有下载");
         // 查找所有 PENDING 状态的任务，重新加入队列
-        List<DownloadTask> pendingTasks = taskMapper.findByStatusIn(
+        List<DownloadTask> pendingTasks = taskMapper.findByStatuses(
                 List.of(DownloadStatus.PENDING.name()));
         for (DownloadTask t : pendingTasks) {
             if (!queuedOrRunning.contains(t.getId())) {

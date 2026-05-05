@@ -286,7 +286,7 @@ public class BotCommandHandler {
 
     // ========== /status ==========
     private void cmdStatus(long chatId) {
-        int running = (int) downloadTaskMapper.countByStatusIn(List.of(DownloadStatus.DOWNLOADING.name()));
+        int running = (int) downloadTaskMapper.countByStatuses(List.of(DownloadStatus.DOWNLOADING.name()));
         String botStatus = botClient != null ? "在线" : "离线";
         sendTextMessage(chatId, String.format("Bot: %s\n下载中: %d\n监听任务: %d\n配置群组: %d\n语言: %s",
                 botStatus, running, listenTasks.size(), chatConfigMapper.countAll(), language));
