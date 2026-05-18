@@ -115,8 +115,8 @@ public class DownloadCoreService {
         if (newSize == currentMaxConcurrent) return;
         int oldSize = currentMaxConcurrent;
         currentMaxConcurrent = newSize;
+        executor.setMaximumPoolSize(newSize);  // 先设置 max，再设置 core（core 不能超过 max）
         executor.setCorePoolSize(newSize);
-        executor.setMaximumPoolSize(newSize);
         log.info("下载并发数已调整: {} -> {}", oldSize, newSize);
     }
 

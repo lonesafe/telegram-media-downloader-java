@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -53,6 +54,13 @@ public class BotClientService {
 
         APIToken apiToken = new APIToken(apiId, apiHash);
         TDLibSettings settings = TDLibSettings.create(apiToken);
+
+        // Bot 使用独立的数据库目录，避免与用户客户端会话冲突
+        String baseDir = System.getProperty("user.dir");
+        String botDbDir = baseDir + File.separator + "tdlib_db_bot";
+        new java.io.File(botDbDir).mkdirs();
+        settings.setDatabaseDirectoryPath(java.nio.file.Path.of(botDbDir));
+        settings.setDownloadedFilesDirectoryPath(java.nio.file.Path.of(baseDir + File.separator + "temp"));
 
         // 共享 ClientFactory（TelegramClientService 和 BotClientService 各创建一个会导致冲突）
         SimpleTelegramClientFactory factory = TelegramClientService.getClientFactory();

@@ -9,7 +9,6 @@ import java.util.List;
 /**
  * ForwardTask Mapper - XML 版（原生 MyBatis）
  */
-@Mapper
 public interface ForwardTaskMapper {
 
     /** 按状态查询 */

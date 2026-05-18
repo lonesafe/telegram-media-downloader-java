@@ -427,7 +427,6 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { telegramApi } from '@/api/telegram'
-import { configApi } from '@/api/download'
 import { forwardApi } from '@/api/forward'
 
 const saving = ref(false)
@@ -765,130 +764,110 @@ const saveTelegramConfig = async () => {
   }
 }
 
-// 保存所有配置
+// 保存所有配置（一次 POST，全部字段一次保存）
 const saveAllConfig = async () => {
   saving.value = true
   try {
-    // 保存各部分配置
-    await Promise.all([
-      telegramApi.saveConfig({
-        ...telegramConfig,
-        forwardListenerEnabled: forwardConfig.enabled,
-        forwardListenerSourceChatIds: JSON.stringify(forwardConfig.sourceChatIds),
-        forwardListenerTargetChatId: forwardConfig.targetChatId,
-        savedMessagesEnabled: savedMessagesConfig.enabled
-      }),
-      configApi.save({
-        ...otherConfig,
-        savePath: downloadConfig.savePath,
-        tempPath: downloadConfig.tempPath,
-        maxConcurrentTasks: downloadConfig.maxConcurrentTasks,
-        downloadTypes: JSON.stringify(downloadConfig.downloadTypes),
-        hideFileName: downloadConfig.hideFileName,
-        enableDownloadTxt: downloadConfig.enableDownloadTxt,
-        dateFormat: downloadConfig.dateFormat
-      }),
-      configApi.saveProxy(proxyConfig),
-      configApi.saveCloud(cloudConfig)
-    ])
-    
+    await telegramApi.saveConfig({
+      // Telegram 基础
+      apiId:       telegramConfig.apiId,
+      apiHash:     telegramConfig.apiHash,
+      botToken:    telegramConfig.botToken,
+      // 下载
+      savePath:           downloadConfig.savePath,
+      tempPath:           downloadConfig.tempPath,
+      maxConcurrentTasks: downloadConfig.maxConcurrentTasks,
+      downloadTypes:      JSON.stringify(downloadConfig.downloadTypes),
+      // 代理
+      proxyEnabled:   proxyConfig.enabled,
+      proxyScheme:    proxyConfig.scheme,
+      proxyHostname: proxyConfig.hostname,
+      proxyPort:     proxyConfig.port,
+      proxyUsername: proxyConfig.username,
+      proxyPassword: proxyConfig.password,
+      // 云盘
+      enableUploadFile:      cloudConfig.enableUploadFile,
+      uploadAdapter:          cloudConfig.uploadAdapter,
+      remoteDir:             cloudConfig.remoteDir,
+      rclonePath:             cloudConfig.rclonePath,
+      beforeUploadFileZip:   cloudConfig.beforeUploadFileZip,
+      afterUploadFileDelete: cloudConfig.afterUploadFileDelete,
+      // 转发监听
+      forwardListenerEnabled:       forwardConfig.enabled,
+      forwardListenerSourceChatIds: JSON.stringify(forwardConfig.sourceChatIds),
+      forwardListenerTargetChatId: forwardConfig.targetChatId,
+      // Saved Messages
+      savedMessagesEnabled: savedMessagesConfig.enabled,
+      // 其他
+      languageCode: otherConfig.language
+    })
     ElMessage.success('配置已保存')
   } catch (error) {
-    console.error('Failed to save config:', error)
+    console.error('保存失败:', error)
     ElMessage.error('保存失败')
   } finally {
     saving.value = false
   }
 }
 
-// 加载配置
+// 加载全部配置（一次 GET，全部字段都拿到）
 const loadConfig = async () => {
   try {
-    // 加载 Telegram 配置
+    const cfg = await telegramApi.getConfig()
+    if (!cfg) return
+
+    // Telegram 基础配置
+    if (cfg.apiId !== undefined)       telegramConfig.apiId = cfg.apiId
+    if (cfg.apiHash !== undefined)     telegramConfig.apiHash = cfg.apiHash
+    if (cfg.botToken !== undefined)   telegramConfig.botToken = cfg.botToken
+
+    // 下载配置
+    downloadConfig.savePath = cfg.savePath || './downloads'
+    downloadConfig.tempPath = cfg.tempPath || './temp'
+    downloadConfig.maxConcurrentTasks = cfg.maxConcurrentTasks || 5
     try {
-      const tgConfig = await telegramApi.getConfig()
-      Object.assign(telegramConfig, tgConfig)
-      
-      // 加载转发监听配置
-      if (tgConfig.forwardListenerEnabled !== undefined) {
-        forwardConfig.enabled = tgConfig.forwardListenerEnabled
-      }
-      if (tgConfig.forwardListenerSourceChatIds) {
-        try {
-          forwardConfig.sourceChatIds = JSON.parse(tgConfig.forwardListenerSourceChatIds)
-        } catch (e) {
-          forwardConfig.sourceChatIds = []
-        }
-      }
-      if (tgConfig.forwardListenerTargetChatId) {
-        forwardConfig.targetChatId = tgConfig.forwardListenerTargetChatId
-      }
-      
-      // 加载 Saved Messages 配置
-      if (tgConfig.savedMessagesEnabled !== undefined) {
-        savedMessagesConfig.enabled = tgConfig.savedMessagesEnabled
-      }
-    } catch (e) {
-      console.error('Failed to load telegram config:', e)
+      downloadConfig.downloadTypes = JSON.parse(cfg.downloadTypes || '["video"]')
+    } catch { downloadConfig.downloadTypes = ['video'] }
+
+    // 代理配置
+    proxyConfig.enabled   = cfg.proxyEnabled || false
+    proxyConfig.scheme    = cfg.proxyScheme || 'socks5'
+    proxyConfig.hostname  = cfg.proxyHostname || ''
+    proxyConfig.port      = cfg.proxyPort || 1080
+    proxyConfig.username  = cfg.proxyUsername || ''
+    proxyConfig.password  = cfg.proxyPassword || ''
+
+    // 云盘配置
+    cloudConfig.enableUploadFile     = cfg.enableUploadFile || false
+    cloudConfig.uploadAdapter         = cfg.uploadAdapter || 'rclone'
+    cloudConfig.remoteDir             = cfg.remoteDir || ''
+    cloudConfig.rclonePath            = cfg.rclonePath || 'rclone'
+    cloudConfig.beforeUploadFileZip  = cfg.beforeUploadFileZip || false
+    cloudConfig.afterUploadFileDelete= cfg.afterUploadFileDelete || false
+
+    // 转发监听配置
+    forwardConfig.enabled = cfg.forwardListenerEnabled || false
+    if (cfg.forwardListenerSourceChatIds) {
+      try {
+        forwardConfig.sourceChatIds = JSON.parse(cfg.forwardListenerSourceChatIds)
+      } catch { forwardConfig.sourceChatIds = [] }
     }
-    
-    // 加载转发监听状态
-    try {
-      const listenerConfig = await forwardApi.getListenerConfig()
-      forwardListenerRunning.value = listenerConfig.isRunning
-    } catch (e) {
-      console.error('Failed to load forward listener config:', e)
-    }
-    
-    // 加载基础配置
-    try {
-      const baseConfig = await configApi.get()
-      if (baseConfig) {
-        // 解析下载类型（JSON数组字符串转为数组）
-        let downloadTypes = ['video']
-        if (baseConfig.downloadTypes) {
-          try {
-            downloadTypes = JSON.parse(baseConfig.downloadTypes)
-          } catch (e) {
-            console.warn('解析下载类型失败，使用默认值:', e)
-          }
-        }
-        Object.assign(downloadConfig, {
-          savePath: baseConfig.savePath || './downloads',
-          tempPath: baseConfig.tempPath || './temp',
-          maxConcurrentTasks: baseConfig.maxConcurrentTasks || 5,
-          downloadTypes: downloadTypes,
-          hideFileName: baseConfig.hideFileName || false,
-          enableDownloadTxt: baseConfig.enableDownloadTxt || false,
-          dateFormat: baseConfig.dateFormat || 'yyyy_MM'
-        })
-        Object.assign(otherConfig, {
-          webLoginSecret: baseConfig.webLoginSecret || '',
-          language: baseConfig.language || 'ZH'
-        })
-      }
-    } catch (e) {
-      console.error('Failed to load base config:', e)
-    }
-    
-    // 加载代理配置
-    try {
-      const proxy = await configApi.getProxy()
-      Object.assign(proxyConfig, proxy)
-    } catch (e) {
-      console.error('Failed to load proxy config:', e)
-    }
-    
-    // 加载云盘配置
-    try {
-      const cloud = await configApi.getCloud()
-      Object.assign(cloudConfig, cloud)
-    } catch (e) {
-      console.error('Failed to load cloud config:', e)
-    }
-  } catch (error) {
-    console.error('Failed to load config:', error)
+    forwardConfig.targetChatId = cfg.forwardListenerTargetChatId || null
+
+    // Saved Messages
+    savedMessagesConfig.enabled = cfg.savedMessagesEnabled !== false
+
+    // 其他配置（语言）
+    otherConfig.language = cfg.languageCode || 'ZH'
+  } catch (e) {
+    console.error('加载配置失败:', e)
   }
+
+  // 转发监听运行状态
+  try {
+    const lc = await forwardApi.getListenerConfig()
+    forwardListenerRunning.value = lc.isRunning
+  } catch (e) { console.error('获取监听状态失败:', e) }
 }
 
 onMounted(() => {

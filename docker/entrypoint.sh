@@ -8,7 +8,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -e
-
+chmod -R 777 /usr/share/nginx/html
 MYSQL_DATA_DIR="/var/lib/mysql"
 MYSQL_INIT_MARKER="/data/.mysql_initialized"
 DB_PASSWORD="${DB_PASSWORD:-root_password}"

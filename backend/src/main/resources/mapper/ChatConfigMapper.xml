@@ -80,4 +80,7 @@
         DELETE FROM chat_config WHERE id = #{id}
     </delete>
 
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM chat_config
+    </select>
 </mapper>

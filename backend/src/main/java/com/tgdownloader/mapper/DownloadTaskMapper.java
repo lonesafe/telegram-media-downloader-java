@@ -9,7 +9,6 @@ import java.util.List;
 /**
  * DownloadTask Mapper - XML 版（原生 MyBatis）
  */
-@Mapper
 public interface DownloadTaskMapper {
 
     /** 全量查询（不分页） */

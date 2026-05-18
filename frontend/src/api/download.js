@@ -1,17 +1,7 @@
 import request from './request'
 
-// 配置 API - 基础配置
+// 聊天配置 API（仅聊天配置 CRUD，Telegram 配置统一走 telegramApi）
 export const configApi = {
-  // 获取基础配置
-  get() {
-    return request.get('/config')
-  },
-  
-  // 保存基础配置
-  save(data) {
-    return request.put('/config', data)
-  },
-  
   // 获取聊天配置列表
   getChats() {
     return request.get('/config/chats')
@@ -30,26 +20,6 @@ export const configApi = {
   // 删除聊天配置
   deleteChat(id) {
     return request.delete(`/config/chats/${id}`)
-  },
-  
-  // 获取代理配置
-  getProxy() {
-    return request.get('/config/proxy')
-  },
-  
-  // 保存代理配置
-  saveProxy(data) {
-    return request.put('/config/proxy', data)
-  },
-  
-  // 获取云盘配置
-  getCloud() {
-    return request.get('/config/cloud')
-  },
-  
-  // 保存云盘配置
-  saveCloud(data) {
-    return request.put('/config/cloud', data)
   }
 }
 

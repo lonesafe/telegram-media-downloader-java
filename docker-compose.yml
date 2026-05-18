@@ -8,42 +8,18 @@ services:
     ports:
       - "1580:80"     # Nginx（前端 + API 代理）
       - "1506:3306"   # MySQL（可选，仅宿主机调试用）
-    environment:
-      # ── Telegram 凭证 ───────────────────────────────────────────────────
-      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
-      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-
-      # ── 文件路径 ─────────────────────────────────────────────────────────
-      DOWNLOAD_PATH: /data/downloads
-      TEMP_PATH: /data/temp
-
-      # ── MySQL 数据库 ──────────────────────────────────────────────────────
-      # 单容器模式下 MySQL 在容器内部运行，密码固定为 root_password
-      # 如需暴露给宿主机或其他容器，可通过 DB_HOST / DB_PORT 覆盖
-      DB_HOST: localhost
-      DB_PORT: "3306"
-      DB_NAME: tg_downloader
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD:-root_password}
-
-      # ── JWT（生产环境请在 .env 中修改）────────────────────────────────────
-      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
-
-      # ── 性能调优 ──────────────────────────────────────────────────────────
-      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
-      SPRING_PROFILES_ACTIVE: prod
     volumes:
       # 下载文件持久化
-      - ./data/downloads:/data/downloads
+      - ./data/downloads:/app/downloads
       # MySQL 数据持久化
       - ./data/mysql:/var/lib/mysql
       # 日志持久化
       - ./data/logs:/data/logs
       # TDLib 会话（登录状态）
-      - ./data/tdlib_db:/data/tdlib_db
+      - ./data/tdlib_db:/app/tdlib_db
+      - ./data/tdlib_db_bot:/app/tdlib_db_bot
       # 临时文件
-      - ./data/temp:/data/temp
+      - ./data/temp:/app/temp
     healthcheck:
       test: [ "CMD", "curl", "-sf", "http://localhost/" ]
       interval: 30s
@@ -61,35 +37,3 @@ networks:
   trim-default:
     external: true
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 单容器全集模式
-#
-# 包含：Ubuntu 22.04 + OpenJDK 17 + MySQL 8.0 + Nginx + Spring Boot
-# 进程管理：supervisord（MySQL + Java App + Nginx 同时运行）
-#
-# 【宿主机编译步骤】
-#   后端: cd backend && mvn package -DskipTests
-#         → 产物: backend/target/telegram-media-downloader-1.0.0.jar
-#   前端: cd frontend && npm install && npm run build
-#         → 产物: frontend/dist/
-#
-# 【Docker 启动】（必须在编译完成后）
-#   docker compose up -d --build
-#
-# 【首次启动说明】
-#   1. MySQL 数据目录为空时自动初始化（无需手动操作）
-#   2. 数据库 root 密码默认为 root_password，可通过 .env 的 DB_PASSWORD 覆盖
-#   3. sql/init.sql 在首次启动时自动执行（建库、建表、默认配置）
-#   4. 后续重启会跳过初始化，直接启动三个进程
-#
-# 【重新初始化数据库】
-#   停止容器后，删除 ./data/mysql 目录，重新 docker compose up -d --build
-#
-# 【资源占用】
-#   - MySQL: ~300MB
-#   - Java: 256-512MB（可调整 JAVA_OPTS）
-#   - Nginx: ~50MB
-#   - 建议分配 2GB+ 内存
-#
-# ─────────────────────────────────────────────────────────────────────────────

@@ -77,35 +77,17 @@ public class PhoneAuthSupplier
     /**
      * TDLib 在 AuthorizationStateWaitPhoneNumber 时调用此方法获取手机号。
      *
-     * 自动登录：如果有已保存的会话，TDLib 不会调用此方法。
-     * 如果仍被调用（例如会话已过期），会检查 tdlib_db/ 是否存在会话文件，
-     * 存在则立即返回 null 让 TDLib 自行处理。
+     * 自动登录：如果有已保存的有效会话，TDLib 不会调用此方法，直接进入 AuthorizationStateReady。
+     * 只有当需要用户输入手机号时才会调用此方法，此时阻塞等待前端传入手机号。
      */
     @Override
     public CompletableFuture<AuthenticationData> get() {
         return CompletableFuture.supplyAsync(() -> {
-            // 自动登录：会话存在时 TDLib 不调用 get()，但以防万一
-            if (hasSavedSession()) {
-                log.info("[PhoneAuth] 检测到已保存会话，将自动恢复");
-                // 返回 null 表示使用已有会话（不会阻塞）
-                return null;
-            }
-
             log.info("[PhoneAuth] TDLib 请求手机号，等待用户输入...");
             String phone = waitFor(phoneRef, "手机号");
             log.info("[PhoneAuth] 提供手机号: {}", maskPhone(phone));
             return (AuthenticationData) new WebAuthData(phone);
         });
-    }
-
-    /** 检查会话目录是否已存在文件（自动登录由 AutoLoginInitializer 触发） */
-    private boolean hasSavedSession() {
-        String baseDir = System.getProperty("user.dir");
-        File dbDir = new File(baseDir, "tdlib_db");
-        // 简单检测：目录存在且有文件
-        if (!dbDir.exists()) return false;
-        String[] files = dbDir.list();
-        return files != null && files.length > 0;
     }
 
     // ==================== ClientInteraction 实现 ====================

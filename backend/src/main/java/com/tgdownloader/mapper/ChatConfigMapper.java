@@ -11,15 +11,12 @@ import java.util.Optional;
 /**
  * ChatConfig Mapper - XML 版（原生 MyBatis）
  */
-@Mapper
 public interface ChatConfigMapper {
 
-    @Select("SELECT * FROM chat_config WHERE chat_id = #{chatId} LIMIT 1")
     Optional<ChatConfig> findByChatId(@Param("chatId") String chatId);
 
     Optional<ChatConfig> findById(@Param("id") Long id);
 
-    @Select("SELECT COUNT(*) FROM chat_config")
     long countAll();
 
     List<ChatConfig> findAll();

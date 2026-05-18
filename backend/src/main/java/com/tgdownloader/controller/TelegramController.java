@@ -67,8 +67,11 @@ public class TelegramController {
         if (config.getBotToken() != null) existing.setBotToken(config.getBotToken());
         if (config.getDatabaseDirectory() != null) existing.setDatabaseDirectory(config.getDatabaseDirectory());
         if (config.getFilesDirectory() != null) existing.setFilesDirectory(config.getFilesDirectory());
+        if (config.getTempPath() != null) existing.setTempPath(config.getTempPath());
+        if (config.getSavePath() != null) existing.setSavePath(config.getSavePath());
         if (config.getLanguageCode() != null) existing.setLanguageCode(config.getLanguageCode());
         if (config.getMaxConcurrentTasks() != null) existing.setMaxConcurrentTasks(config.getMaxConcurrentTasks());
+        if (config.getDownloadTypes() != null) existing.setDownloadTypes(config.getDownloadTypes());
         if (config.getProxyEnabled() != null) existing.setProxyEnabled(config.getProxyEnabled());
         if (config.getProxyScheme() != null) existing.setProxyScheme(config.getProxyScheme());
         if (config.getProxyHostname() != null) existing.setProxyHostname(config.getProxyHostname());
@@ -89,8 +92,8 @@ public class TelegramController {
         if (config.getForwardListenerTargetChatId() != null) existing.setForwardListenerTargetChatId(config.getForwardListenerTargetChatId());
         if (config.getForwardListenerLastMessageId() != null) existing.setForwardListenerLastMessageId(config.getForwardListenerLastMessageId());
 
-        boolean wasEnabled = existing.getSavedMessagesEnabled() != null && existing.getSavedMessagesEnabled();
-        boolean nowEnabled = config.getSavedMessagesEnabled() != null && config.getSavedMessagesEnabled();
+        boolean wasEnabled = Boolean.TRUE.equals(existing.getSavedMessagesEnabled());
+        boolean nowEnabled = Boolean.TRUE.equals(config.getSavedMessagesEnabled());
 
         TelegramConfig saved = telegramConfigMapper.save(existing);
 
@@ -100,7 +103,7 @@ public class TelegramController {
         }
 
         if (!wasEnabled && nowEnabled) {
-            log.info("启用收藏夹扫秒..");
+            log.info("启用收藏夹扫描..");
             try {
                 savedMessagesService.scanAll(0);
             } catch (Exception e) {

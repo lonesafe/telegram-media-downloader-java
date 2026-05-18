@@ -11,14 +11,9 @@ import java.util.Optional;
 /**
  * TelegramConfig Mapper - XML 版（原生 MyBatis）
  */
-@Mapper
 public interface TelegramConfigMapper {
 
-    @Select("SELECT * FROM telegram_config WHERE config_name = #{configName} LIMIT 1")
     Optional<TelegramConfig> findByConfigName(@Param("configName") String configName);
-
-    @Select("SELECT COUNT(*) FROM telegram_config")
-    long countAll();
 
     List<TelegramConfig> findAll();
 

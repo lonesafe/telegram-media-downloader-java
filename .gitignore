@@ -7,6 +7,4 @@
 /tools
 /frontend/dist
 /temp/
-/backend/target/
-/backend/target/maven-status/
-/backend/target/classes/
+/backend/target/Dockerfile

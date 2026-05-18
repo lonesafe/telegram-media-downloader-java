@@ -7,7 +7,7 @@ spring:
 
   # MySQL 数据源
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:tgdownloader}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+    url: jdbc:mysql://${DB_HOST:172.17.0.3}:${DB_PORT:1506}/${DB_NAME:tg_downloader}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:root_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -18,61 +18,14 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
 
-  # 原生 MyBatis 配置
-  mybatis:
-    mapper-locations: classpath:mapper/**/*.xml
-    type-aliases-package: com.tgdownloader.entity
-    configuration:
-      map-underscore-to-camel-case: true
-      default-fetch-size: 100
-      default-statement-timeout: 30
-
-  sql:
-    init:
-      mode: never
-
-  # Redis（可选，用于分布式）
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password:
-      database: 0
-
-# Telegram API 配置（从 https://my.telegram.org/apps 获取）
-telegram:
-  api-id: ${TELEGRAM_API_ID:}
-  api-hash: ${TELEGRAM_API_HASH:}
-  bot-token: ${TELEGRAM_BOT_TOKEN:}
-  use-test-dc: false
-
-# 下载配置
-download:
-  save-path: ${DOWNLOAD_PATH:./downloads}
-  temp-path: ${TEMP_PATH:./temp}
-  max-concurrent-tasks: ${MAX_TASKS:5}
-  max-connections: ${MAX_CONNECTIONS:25}
-  hide-file-name: false
-  enable-download-txt: false
-  date-format: "yyyy_MM"
-
-# 云盘上传配置
-cloud:
-  enable-upload: ${CLOUD_ENABLE:false}
-  upload-adapter: ${CLOUD_ADAPTER:rclone}
-  remote-dir: ${CLOUD_REMOTE:drive:/telegram}
-  rclone-path: ${RCLONE_PATH:rclone}
-  before-upload-zip: ${CLOUD_ZIP:false}
-  after-upload-delete: ${CLOUD_DELETE:false}
-
-# 代理配置
-proxy:
-  enabled: ${PROXY_ENABLE:false}
-  scheme: ${PROXY_SCHEME:socks5}
-  hostname: ${PROXY_HOST:}
-  port: ${PROXY_PORT:1080}
-  username: ${PROXY_USER:}
-  password: ${PROXY_PASS:}
+# MyBatis 配置（不在 spring: 命名空间下）
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.tgdownloader.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
 
 # 日志配置
 logging:
