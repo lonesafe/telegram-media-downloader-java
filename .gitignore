@@ -1,10 +1,10 @@
 /frontend/node_modules/
+/frontend/dist
+/backend/target/
 /downloads/
 /data/
 .idea
 /logs/
 /memory/
 /tools
-/frontend/dist
 /temp/
-/backend/target/
