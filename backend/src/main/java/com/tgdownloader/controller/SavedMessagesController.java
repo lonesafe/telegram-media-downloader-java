@@ -48,20 +48,10 @@ public class SavedMessagesController {
 
     @GetMapping("/stats")
     public ApiResponse<Map<String, Object>> stats() {
-        int total = 0, running = 0, success = 0, failed = 0, paused = 0;
-        for (DownloadTask t : savedMessages.getTaskRepo().findAll()) {
-            if (t.getChatId() == null) continue;
-            try {
-                if (Long.parseLong(t.getChatId()) < 0) total++;
-            } catch (Exception e) {
-                continue;
-            }
-            if (DownloadStatus.DOWNLOADING.name().equals(t.getStatus())) running++;
-            else if (DownloadStatus.SUCCESS_DOWNLOAD.name().equals(t.getStatus())) success++;
-            else if (DownloadStatus.FAILED_DOWNLOAD.name().equals(t.getStatus())) failed++;
-            else if (DownloadStatus.PAUSED.name().equals(t.getStatus())) paused++;
-        }
-        return ApiResponse.success(Map.of("total", total, "running", running, "success", success, "failed", failed, "paused", paused, "monitoring", savedMessages.getMonitoring().get()));
+        long total = savedMessages.getTaskRepo().countSavedMessages();
+        long downloaded = savedMessages.getTaskRepo().countSavedMessagesByStatuses("'SUCCESS_DOWNLOAD'");
+        long pending = savedMessages.getTaskRepo().countSavedMessagesByStatuses("'PENDING', 'PAUSED'");
+        return ApiResponse.success(Map.of("total", total, "downloaded", downloaded, "pending", pending, "monitoring", savedMessages.getMonitoring().get()));
     }
 
     @GetMapping("/status")
@@ -91,20 +81,12 @@ public class SavedMessagesController {
     public ApiResponse<Map<String, Object>> tasks(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        List<DownloadTask> saved = savedMessages.getTaskRepo().findAll().stream()
-                .filter(t -> {
-                    if (t.getChatId() == null) return false;
-                    try {
-                        return Long.parseLong(t.getChatId()) < 0;
-                    } catch (Exception e) {
-                        return false;
-                    }
-                })
-                .toList();
-        int start = page * size;
+        int offset = page * size;
+        List<DownloadTask> tasks = savedMessages.getTaskRepo().findSavedMessages(offset, size);
+        long total = savedMessages.getTaskRepo().countSavedMessages();
         return ApiResponse.success(Map.of(
-                "tasks", start < saved.size() ? saved.subList(start, Math.min(start + size, saved.size())) : Collections.emptyList(),
-                "total", saved.size(), "page", page, "size", size));
+                "tasks", tasks,
+                "total", total, "page", page, "size", size));
     }
 
     @PostMapping("/tasks/{id}/pause")

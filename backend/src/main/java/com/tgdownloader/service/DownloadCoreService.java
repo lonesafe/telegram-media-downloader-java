@@ -27,52 +27,97 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 核心下载服务
- * 管理下载任务的生命周期：创建、执行、停止、暂停、恢复
- * 通过 TelegramClientService 调用 TDLib 下载文件
+ * 核心下载服务类
+ * <p>
+ * 管理下载任务的完整生命周期：
+ * <ul>
+ *   <li>创建下载任务</li>
+ *   <li>执行下载（通过 TelegramClientService 调用 TDLib）</li>
+ *   <li>暂停/恢复下载</li>
+ *   <li>停止下载</li>
+ *   <li>任务队列管理（LinkedBlockingQueue）</li>
+ *   <li>并发控制（ThreadPoolExecutor）</li>
+ *   <li>实时速度计算</li>
+ * </ul>
+ * </p>
+ * <p>
+ * 下载流程：
+ * <ol>
+ *   <li>任务创建 → 加入队列（downloadQueue）</li>
+ *   <li>队列消费者（queueConsumerLoop）→ 提交到线程池</li>
+ *   <li>执行下载 → 更新进度 → 完成/失败</li>
+ *   <li>速度计算 → 通过 WebSocket 推送到前端</li>
+ * </ol>
+ * </p>
+ * 
+ * @author Telegram Media Downloader
+ * @version 1.0.0
+ * @since 2024
  */
 @Service
 public class DownloadCoreService {
 
+    /** 日志对象 */
     private static final Logger log = LoggerFactory.getLogger(DownloadCoreService.class);
 
+    /** 下载任务数据访问接口 */
     @Autowired
     private DownloadTaskMapper taskMapper;
 
+    /** Telegram 配置数据访问接口 */
     @Autowired
     private TelegramConfigMapper configMapper;
 
+    /** Telegram 客户端服务（用于调用 TDLib 下载文件） */
     @Autowired
     private TelegramClientService telegramClient;
+    /** Telegram 工具类 */
     @Autowired
     private TelegramUtils telegramUtils;
 
+    /** 下载线程池（动态调整并发数） */
     private ThreadPoolExecutor executor;
+    /** 当前最大并发数 */
     private int currentMaxConcurrent = 5;
     // 下载任务队列：新任务和恢复的任务都加入队列，由消费者线程分发到线程池
+    /** 下载任务队列（链表阻塞队列） */
     private final LinkedBlockingQueue<DownloadTask> downloadQueue = new LinkedBlockingQueue<>();
     // 正在运行的任务ID集合（用于判断任务是否已在队列或执行中，防止重复）
+    /** 正在队列或运行中的任务 ID 集合（防止重复添加） */
     private final Set<Long> queuedOrRunning = ConcurrentHashMap.newKeySet();
+    /** 运行中的任务 Future 对象（用于取消任务） */
     private final Map<Long, Future<?>> runningTasks = new ConcurrentHashMap<>();
+    /** 全局暂停标志 */
     private final AtomicBoolean paused = new AtomicBoolean(false);
+    /** 队列消费者是否已启动 */
     private volatile boolean consumerStarted = false;
 
+    /** 总下载字节数 */
     private final AtomicLong totalDownloaded = new AtomicLong(0);
+    /** 总上传字节数 */
     private final AtomicLong totalUploaded = new AtomicLong(0);
+    /** 全局下载速度（字节/秒） */
     private final AtomicLong downloadSpeed = new AtomicLong(0);
+    /** 全局上传速度（字节/秒） */
     private final AtomicLong uploadSpeed = new AtomicLong(0);
 
     // 实时速度记录（不存数据库，只在内存中维护）
     // key: taskId, value: [lastBytes, lastTime] 用于计算瞬时速度
+    /** 任务速度追踪器（内存中维护，不持久化） */
     private final Map<Long, long[]> taskSpeedTracker = new ConcurrentHashMap<>();
 
+    /** 上次计算的字节数（用于速度计算） */
     private long lastBytes = 0;
+    /** 上次计算的时间（用于速度计算） */
     private long lastTime = System.currentTimeMillis();
 
     /**
-     * 获取所有任务的实时速度（不查数据库，从内存获取）
-     *
-     * @return Map: taskId -> speed (bytes/s)
+     * 获取所有任务的实时速度
+     * <p>
+     * 从内存中的 taskSpeedTracker 获取速度，不查询数据库。
+     * </p>
+     * 
+     * @return Map，key 为任务 ID，value 为速度（字节/秒）
      */
     public Map<Long, Long> getAllTaskSpeeds() {
         Map<Long, Long> result = new ConcurrentHashMap<>();
@@ -93,7 +138,15 @@ public class DownloadCoreService {
     }
 
     /**
-     * 启动下载队列消费者线程（仅执行一次）
+     * 初始化方法（由 Spring 调用）
+     * <p>
+     * 执行以下初始化：
+     * <ol>
+     *   <li>从数据库读取最大并发数配置</li>
+     *   <li>创建固定大小的线程池</li>
+     *   <li>启动队列消费者线程</li>
+     * </ol>
+     * </p>
      */
     @PostConstruct
     public void init() {
@@ -108,7 +161,12 @@ public class DownloadCoreService {
     }
 
     /**
-     * 动态调整线程池并发数（前端修改配置时调用）
+     * 动态调整线程池并发数
+     * <p>
+     * 当前端修改配置时调用此方法。
+     * </p>
+     * 
+     * @param newSize 新的并发数（必须 ≥ 1）
      */
     public void updateConcurrency(int newSize) {
         if (newSize < 1) newSize = 1;
@@ -122,6 +180,9 @@ public class DownloadCoreService {
 
     /**
      * 启动下载队列消费者线程（仅执行一次）
+     * <p>
+     * 消费者线程从 downloadQueue 取任务并提交到线程池执行。
+     * </p>
      */
     private void startQueueConsumer() {
         if (consumerStarted) return;
@@ -133,7 +194,14 @@ public class DownloadCoreService {
     }
 
     /**
-     * 队列消费者循环：从队列取任务，提交到线程池执行
+     * 队列消费者循环
+     * <p>
+     * 无限循环，从队列取任务并提交到线程池：
+     * <ul>
+     *   <li>如果全局暂停，将任务状态改为 PENDING 并重新入队</li>
+     *   <li>否则，提交任务到线程池执行</li>
+     * </ul>
+     * </p>
      */
     private void queueConsumerLoop() {
         while (!Thread.currentThread().isInterrupted()) {
@@ -175,6 +243,16 @@ public class DownloadCoreService {
 
     /**
      * 提交下载任务到队列（程序启动或新下载时调用）
+     * <p>
+     * 此方法是下载入口：
+     * <ol>
+     *   <li>检查任务是否已在队列或运行中（防止重复）</li>
+     *   <li>如果全局暂停，标记为 PENDING</li>
+     *   <li>否则，标记为 QUEUED 并加入 downloadQueue</li>
+     * </ol>
+     * </p>
+     * 
+     * @param task 下载任务对象
      */
     public void startDownload(DownloadTask task) {
         // 防止重复入队
@@ -200,6 +278,17 @@ public class DownloadCoreService {
 
     /**
      * 手动停止指定任务（标记为 PAUSED，可恢复）
+     * <p>
+     * 执行以下步骤：
+     * <ol>
+     *   <li>取消正在执行的任务（通过 Future.cancel）</li>
+     *   <li>从队列中移除</li>
+     *   <li>从追踪集合移除</li>
+     *   <li>更新数据库状态为 PAUSED</li>
+     * </ol>
+     * </p>
+     * 
+     * @param taskId 要停止的任务 ID
      */
     public void stopDownload(Long taskId) {
         // 1. 取消正在执行的任务
@@ -222,6 +311,12 @@ public class DownloadCoreService {
 
     /**
      * 恢复指定任务（清除手动停止标记，重新下载）
+     * <p>
+     * 将任务的 isStopTransmission 设为 false，状态设为 PENDING，
+     * 然后调用 startDownload() 重新加入队列。
+     * </p>
+     * 
+     * @param taskId 要恢复的任务 ID
      */
     public void resumeTask(Long taskId) {
         DownloadTask task3 = taskMapper.findById(taskId);
@@ -235,7 +330,15 @@ public class DownloadCoreService {
     }
 
     /**
-     * 暂停所有任务（阻止新任务启动，并将队列中的任务标记为 PENDING）
+     * 暂停所有任务
+     * <p>
+     * 执行以下操作：
+     * <ol>
+     *   <li>设置全局暂停标志（paused = true）</li>
+     *   <li>清空下载队列（队列中的任务会被标记为 PENDING）</li>
+     *   <li>已在 executeDownload 中的任务会在下次循环时暂停</li>
+     * </ol>
+     * </p>
      */
     public void pauseAll() {
         paused.set(true);
@@ -246,7 +349,15 @@ public class DownloadCoreService {
     }
 
     /**
-     * 恢复所有任务（将 PENDING 状态的任务重新加入队列）
+     * 恢复所有任务
+     * <p>
+     * 执行以下操作：
+     * <ol>
+     *   <li>清除全局暂停标志（paused = false）</li>
+     *   <li>查找所有 PENDING 状态的任务</li>
+     *   <li>将任务重新加入队列（状态改为 QUEUED）</li>
+     * </ol>
+     * </p>
      */
     public void resumeAll() {
         paused.set(false);
@@ -266,7 +377,16 @@ public class DownloadCoreService {
     }
 
     /**
-     * 全局下载进度
+     * 获取全局下载进度
+     * <p>
+     * 计算实时下载速度：
+     * <ul>
+     *   <li>优先从 taskSpeedTracker 汇总速度（更准确）</li>
+     *   <li>如果追踪器没有数据，使用全局增量计算</li>
+     * </ul>
+     * </p>
+     * 
+     * @return DownloadProgressDto 包含总下载量、总上传量、下载速度、上传速度等
      */
     public DownloadProgressDto getGlobalProgress() {
         long now = System.currentTimeMillis();
@@ -300,6 +420,22 @@ public class DownloadCoreService {
 
     // ==================== 内部执行逻辑 ====================
 
+    /**
+     * 执行下载（内部方法，由线程池调用）
+     * <p>
+     * 完整的下载流程：
+     * <ol>
+     *   <li>检查用户客户端是否已连接</li>
+     *   <li>获取 TdApi.Message（优先使用缓存）</li>
+     *   <li>调用 TelegramClientService.downloadMessageFile() 下载文件</li>
+     *   <li>下载过程中通过 onProgress 回调更新进度</li>
+     *   <li>下载完成后，更新任务状态为 SUCCESS_DOWNLOAD</li>
+     *   <li>如果配置了云盘上传，调用 CloudDriveService 上传</li>
+     * </ol>
+     * </p>
+     * 
+     * @param task 下载任务对象
+     */
     private void executeDownload(DownloadTask task) {
         long startTime = System.currentTimeMillis();
         try {

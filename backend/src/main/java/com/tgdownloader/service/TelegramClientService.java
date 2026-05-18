@@ -27,74 +27,94 @@ import java.util.function.BiConsumer;
 /**
  * Telegram 用户客户端服务
  * <p>
- * 认证流程（参考 Example.java）：
- * 1. connect() → PhoneAuthSupplier 提供手机号 → TDLib 发送验证码
- * 2. setCode() → PhoneAuthSupplier 填写验证码 → 验证通过（或需要密码）
- * 3. setPassword() → PhoneAuthSupplier 填写两步密码 → 登录完成
+ * 封装 TDLight (TDLib Java 封装) 客户端，提供 Telegram 用户账号的登录、消息获取、文件下载等功能。
+ * </p>
  * <p>
- * 授权状态通过 UpdateAuthorizationState 回调更新，前端通过 /auth/state 查询当前状态。
+ * 认证流程（参考 TDLight Example.java）：
+ * <ol>
+ *   <li>connect() → PhoneAuthSupplier 提供手机号 → TDLib 发送验证码</li>
+ *   <li>setCode() → PhoneAuthSupplier 填写验证码 → 验证通过（或需要密码）</li>
+ *   <li>setPassword() → PhoneAuthSupplier 填写两步密码 → 登录完成</li>
+ * </ol>
+ * </p>
+ * <p>
+ * 授权状态通过 UpdateAuthorizationState 回调更新，前端通过 /api/telegram/auth/state 查询当前状态。
+ * </p>
+ * 
+ * @author Telegram Media Downloader
+ * @version 1.0.0
+ * @since 2024
  */
 @Data
 @Service
 public class TelegramClientService {
 
+    /** 日志对象 */
     private static final Logger log = LoggerFactory.getLogger(TelegramClientService.class);
 
+    /** Telegram 配置数据访问接口 */
     @Autowired
     private TelegramConfigMapper telegramConfigMapper;
 
+    /** 转发服务（懒加载，避免循环依赖） */
     @Autowired
     @Lazy
     private ForwardService forwardService;
 
-
+    /** 收藏夹服务（懒加载，避免循环依赖） */
     @Autowired
     @Lazy
     private SavedMessagesService savedMessagesService;
 
     /**
      * 单例 ClientFactory（全局只能有一个）
+     * <p>
+     * TDLight 要求全局使用同一个 SimpleTelegramClientFactory 实例。
+     * 此字段为静态变量，确保用户客户端和 Bot 客户端共享同一个工厂。
+     * </p>
      */
     private static SimpleTelegramClientFactory clientFactoryInstance;
 
+    /** TDLight 客户端实例（用户客户端） */
     private SimpleTelegramClient client;
+
+    /** 手机号/验证码/密码供应器（处理 TDLib 认证交互） */
     private final PhoneAuthSupplier phoneAuthSupplier = new PhoneAuthSupplier();
 
     // ==================== 连接状态 ====================
+    /** 是否已连接（登录完成） */
     private volatile boolean connected = false;
+    /** 是否正在连接中 */
     private volatile boolean connecting = false;
+    /** 当前登录用户的 ID */
     private volatile long userId = 0;
+    /** 当前登录用户的名称 */
     private volatile String userName = "";
+    /** 当前认证状态（STATE_NONE / STATE_WAIT_PHONE / STATE_WAIT_CODE 等） */
     private volatile int authState = STATE_NONE;
 
-    // ==================== 认证状态（由 onAuthorizationStateUpdate 更新）====================
-    /**
-     * 等待手机号输入
-     */
+    // ==================== 认证状态常量（由 onAuthorizationStateUpdate 更新）====================
+    /** 等待手机号输入 */
     public static final int STATE_WAIT_PHONE = 0;
-    /**
-     * 等待验证码输入
-     */
+    /** 等待验证码输入 */
     public static final int STATE_WAIT_CODE = 1;
-    /**
-     * 等待两步验证密码
-     */
+    /** 等待两步验证密码 */
     public static final int STATE_WAIT_PASSWORD = 2;
-    /**
-     * 已连接（登录完成）
-     */
+    /** 已连接（登录完成） */
     public static final int STATE_READY = 3;
-    /**
-     * 未初始化（未发起连接）
-     */
+    /** 未初始化（未发起连接） */
     public static final int STATE_NONE = -1;
 
+    /** @return 是否已连接（登录完成） */
     public boolean isConnected() { return connected; }
+    /** @return 是否正在连接中 */
     public boolean isConnecting() { return connecting; }
 
 
     /**
      * 是否需要输入手机号
+     * 
+     * @return 如果需要输入手机号返回 true，否则返回 false
      */
     public boolean isNeedPhoneNumber() {
         return authState == STATE_NONE || authState == STATE_WAIT_PHONE;
@@ -102,25 +122,41 @@ public class TelegramClientService {
 
     /**
      * 是否需要输入验证码
+     * 
+     * @return 如果需要输入验证码返回 true，否则返回 false
      */
     public boolean isNeedCode() {
         return authState == STATE_WAIT_CODE;
     }
 
     /**
-     * 是否需要输入两步密码
+     * 是否需要输入两步验证密码
+     * 
+     * @return 如果需要输入两步验证密码返回 true，否则返回 false
      */
     public boolean isNeedPassword() {
         return authState == STATE_WAIT_PASSWORD;
     }
 
-    // ==================== 生命周期 ====================
+    // ==================== 生命周期管理 ====================
 
+    /**
+     * Bean 初始化方法（由 Spring 调用）
+     * <p>
+     * 在依赖注入完成后执行，用于执行初始化逻辑。
+     * </p>
+     */
     @PostConstruct
     public void init() {
         log.info("TelegramClientService 初始化");
     }
 
+    /**
+     * Bean 销毁方法（由 Spring 调用）
+     * <p>
+     * 在 Bean 销毁前执行，用于释放资源（如断开 Telegram 连接）。
+     * </p>
+     */
     @PreDestroy
     public void destroy() {
         disconnect();
@@ -129,14 +165,21 @@ public class TelegramClientService {
     // ==================== 连接 / 断开 ====================
 
     /**
-     * 发起 Telegram 连接。
+     * 发起 Telegram 连接
      * <p>
-     * 会先检查配置（API ID / Hash），然后：
-     * 1. 设置 PhoneAuthSupplier 为交互处理器（处理验证码 / 密码）
-     * 2. 使用 PhoneAuthSupplier 作为认证供应器（TDLib 会回调 get() 获取手机号）
-     * 3. 发起连接后进入等待状态，直到 setPhone() 提供手机号
+     * 认证流程：
+     * <ol>
+     *   <li>检查配置（API ID / Hash）</li>
+     *   <li>创建 TDLibSettings 和 SimpleTelegramClient</li>
+     *   <li>设置 UpdateHandler（授权状态、新消息、收藏夹更新）</li>
+     *   <li>使用 PhoneAuthSupplier 作为认证供应器</li>
+     *   <li>发起连接后进入等待状态，直到用户输入手机号/验证码/密码</li>
+     * </ol>
+     * </p>
+     * 
+     * @throws IllegalStateException 如果配置不完整或连接已建立
      */
-    public synchronized void connect() throws Exception {
+    public synchronized void connect() {
         if (connected || connecting) {
             log.warn("已连接或正在连接中，跳过");
             return;
@@ -228,6 +271,9 @@ public class TelegramClientService {
 
     /**
      * 主动断开 Telegram 连接
+     * <p>
+     * 重置所有连接状态和用户信息。
+     * </p>
      */
     public synchronized void disconnect() {
         connected = false;
@@ -249,8 +295,13 @@ public class TelegramClientService {
     // ==================== 认证输入（供 Controller 调用）====================
 
     /**
-     * 设置手机号 - 供 TelegramController.auth/phone 调用
-     * PhoneAuthSupplier.waitFor() 会收到此值并返回给 TDLib
+     * 设置手机号
+     * <p>
+     * 供 TelegramController.auth/phone 调用。
+     * PhoneAuthSupplier.waitFor() 会收到此值并返回给 TDLib。
+     * </p>
+     * 
+     * @param phone 手机号（国际格式，例如 +8613800138000）
      */
     public void setPhoneNumber(String phone) {
         log.info("设置手机号: {}", maskPhone(phone));
@@ -258,7 +309,12 @@ public class TelegramClientService {
     }
 
     /**
-     * 设置验证码 - 供 TelegramController.auth/code 调用
+     * 设置验证码
+     * <p>
+     * 供 TelegramController.auth/code 调用。
+     * </p>
+     * 
+     * @param code 验证码（Telegram 发送的 5 位数字码）
      */
     public void setCode(String code) {
         log.info("设置验证码: ***");
@@ -266,7 +322,12 @@ public class TelegramClientService {
     }
 
     /**
-     * 设置两步验证密码 - 供 TelegramController.auth/password 调用
+     * 设置两步验证密码
+     * <p>
+     * 供 TelegramController.auth/password 调用。
+     * </p>
+     * 
+     * @param password 两步验证密码
      */
     public void setPassword(String password) {
         log.info("设置两步密码: ***");
@@ -275,6 +336,21 @@ public class TelegramClientService {
 
     // ==================== 授权状态回调 ====================
 
+    /**
+     * 处理 TDLib 授权状态更新
+     * <p>
+     * 此方法作为 UpdateAuthorizationState 的回调，根据当前授权状态更新 authState 字段：
+     * <ul>
+     *   <li>AuthorizationStateReady → 登录成功，获取用户信息</li>
+     *   <li>AuthorizationStateClosed → 连接断开，重置状态</li>
+     *   <li>AuthorizationStateWaitCode → 等待验证码输入</li>
+     *   <li>AuthorizationStateWaitPassword → 等待两步密码输入</li>
+     *   <li>AuthorizationStateWaitPhoneNumber → 等待手机号输入</li>
+     * </ul>
+     * </p>
+     * 
+     * @param state TDLib 授权状态对象
+     */
     private void onAuthorizationStateUpdate(TdApi.AuthorizationState state) {
         String stateName = state == null ? "null" : state.getClass().getSimpleName();
         log.info("[TDLight] 授权状态: {}", stateName);
@@ -307,6 +383,12 @@ public class TelegramClientService {
         }
     }
 
+    /**
+     * 异步获取当前登录用户的信息
+     * <p>
+     * 在登录成功后调用，获取用户 ID 和名称并保存到成员变量。
+     * </p>
+     */
     private void fetchMeAsync() {
         if (client == null) return;
         client.getMeAsync().whenComplete((me, err) -> {
@@ -321,6 +403,15 @@ public class TelegramClientService {
         });
     }
 
+    /**
+     * 对手机号进行脱敏处理
+     * <p>
+     * 保留前 3 位和后 4 位，中间用 **** 替换。
+     * </p>
+     * 
+     * @param phone 原始手机号
+     * @return 脱敏后的手机号（例如 138****8000）
+     */
     private static String maskPhone(String phone) {
         if (phone == null || phone.length() < 7) return "***";
         return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
@@ -328,10 +419,27 @@ public class TelegramClientService {
 
     // ==================== 静态工厂（供 BotClientService 共享 ClientFactory）====================
 
+    /**
+     * 获取全局唯一的 ClientFactory 实例
+     * <p>
+     * TDLight 要求全局使用同一个 SimpleTelegramClientFactory 实例。
+     * 此方法提供单例访问点。
+     * </p>
+     * 
+     * @return 全局 ClientFactory 实例（可能为 null）
+     */
     public static SimpleTelegramClientFactory getClientFactory() {
         return clientFactoryInstance;
     }
 
+    /**
+     * 设置全局 ClientFactory 实例
+     * <p>
+     * 通常由 TelegramClientService 或 BotClientService 在初始化时调用。
+     * </p>
+     * 
+     * @param factory SimpleTelegramClientFactory 实例
+     */
     public static void setClientFactory(SimpleTelegramClientFactory factory) {
         clientFactoryInstance = factory;
     }

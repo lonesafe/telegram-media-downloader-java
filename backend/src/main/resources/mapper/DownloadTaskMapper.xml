@@ -188,4 +188,24 @@
         SELECT COUNT(*) FROM download_task
     </select>
 
+    <!-- 查询收藏夹消息（chat_id 以 '-' 开头，即负数） -->
+    <select id="findSavedMessages" resultMap="baseResultMap">
+        SELECT * FROM download_task 
+        WHERE chat_id LIKE '-%'
+        ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 统计收藏夹消息数量 -->
+    <select id="countSavedMessages" resultType="long">
+        SELECT COUNT(*) FROM download_task 
+        WHERE chat_id LIKE '-%'
+    </select>
+
+    <!-- 按状态统计收藏夹消息数量（status IN） -->
+    <select id="countSavedMessagesByStatuses" resultType="long">
+        SELECT COUNT(*) FROM download_task 
+        WHERE chat_id LIKE '-%' AND status IN (${statuses})
+    </select>
+
 </mapper>
