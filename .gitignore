@@ -7,4 +7,4 @@
 /tools
 /frontend/dist
 /temp/
-/backend/target/Dockerfile
+/backend/target/
