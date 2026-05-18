@@ -52,9 +52,6 @@ RUN chown mysql:mysql /var/run/mysqld /var/log/mysql
 RUN chmod 777 /var/run/mysqld
 
 
-# 禁止 Nginx daemon 模式（由 supervisord 管理）
-RUN echo "daemon off;" >> /etc/nginx/nginx.conf
-
 # ── 预创建目录 ─────────────────────────────────────────────────────────────
 RUN mkdir -p /data/downloads /data/logs /data/tdlib_db /data/temp /var/lib/mysql /docker-entrypoint-initdb.d /app
 
@@ -64,9 +61,12 @@ COPY telegram-media-downloader-1.0.0.jar /app/app.jar
 
 # 前端静态文件
 COPY frontend/dist/ /usr/share/nginx/html/
+RUN chmod -R 777 /usr/share/nginx/html
 
 # Nginx 配置
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/nginx.conf
+# 禁止 Nginx daemon 模式（由 supervisord 管理）
+RUN echo "daemon off;" >> /etc/nginx/nginx.conf
 
 # MySQL 初始化脚本
 COPY sql/init.sql /docker-entrypoint-initdb.d/00-init.sql
