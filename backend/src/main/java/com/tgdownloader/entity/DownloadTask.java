@@ -86,6 +86,10 @@ public class DownloadTask {
     private Integer skipTask = 0;
     /** 下载速度（字节/秒） */
     private Double downloadSpeed = 0.0;
+    /** Bot 聊天 ID（用于发送下载进度消息） */
+    private Long botChatId;
+    /** Bot 消息 ID（用于编辑下载进度消息） */
+    private Long botMessageId;
     /** 创建时间 */
     private LocalDateTime createdAt;
     /** 更新时间 */
@@ -201,6 +205,14 @@ public class DownloadTask {
     public Double getDownloadSpeed() { return downloadSpeed; }
     /** @param downloadSpeed 下载速度 */
     public void setDownloadSpeed(Double downloadSpeed) { this.downloadSpeed = downloadSpeed; }
+    /** @return Bot 聊天 ID */
+    public Long getBotChatId() { return botChatId; }
+    /** @param botChatId Bot 聊天 ID */
+    public void setBotChatId(Long botChatId) { this.botChatId = botChatId; }
+    /** @return Bot 消息 ID */
+    public Long getBotMessageId() { return botMessageId; }
+    /** @param botMessageId Bot 消息 ID */
+    public void setBotMessageId(Long botMessageId) { this.botMessageId = botMessageId; }
     /** @return 创建时间 */
     public LocalDateTime getCreatedAt() { return createdAt; }
     /** @param createdAt 创建时间 */

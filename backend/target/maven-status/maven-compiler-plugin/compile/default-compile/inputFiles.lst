@@ -22,6 +22,7 @@ G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownload
 G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\entity\ForwardTask.java
 G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\entity\TelegramConfig.java
 G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\entity\TestEntity.java
+G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\event\DownloadProgressEvent.java
 G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\handler\bot\BotCommandHandler.java
 G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\mapper\ChatConfigMapper.java
 G:\workSpace\telegram-media-downloader-java\backend\src\main\java\com\tgdownloader\mapper\DownloadTaskMapper.java

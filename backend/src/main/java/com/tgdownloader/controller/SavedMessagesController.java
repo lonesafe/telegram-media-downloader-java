@@ -80,10 +80,12 @@ public class SavedMessagesController {
     @GetMapping("/tasks")
     public ApiResponse<Map<String, Object>> tasks(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "false") boolean includeDownloaded) {
         int offset = page * size;
-        List<DownloadTask> tasks = savedMessages.getTaskRepo().findSavedMessages(offset, size);
-        long total = savedMessages.getTaskRepo().countSavedMessages();
+        // 根据 includeDownloaded 参数调用不同的查询方法
+        List<DownloadTask> tasks = savedMessages.getTaskRepo().findSavedMessagesTasks(offset, size, includeDownloaded);
+        long total = savedMessages.getTaskRepo().countSavedMessagesTasks(includeDownloaded);
         return ApiResponse.success(Map.of(
                 "tasks", tasks,
                 "total", total, "page", page, "size", size));

@@ -1,5 +1,6 @@
 com\tgdownloader\service\PhoneAuthSupplier.class
 com\tgdownloader\config\jwt\JwtService.class
+com\tgdownloader\event\DownloadProgressEvent.class
 com\tgdownloader\model\ForwardStatus.class
 com\tgdownloader\service\TelegramClientService.class
 com\tgdownloader\config\SecurityConfig.class

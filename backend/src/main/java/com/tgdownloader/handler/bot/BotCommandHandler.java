@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import jakarta.annotation.PostConstruct;
 
 /**
  * Bot 命令处理器
@@ -52,6 +53,104 @@ public class BotCommandHandler {
     private final AtomicLong taskIdSeq = new AtomicLong(0);
     private volatile String language = "zh";
     private final Map<String, Long> usernameCache = new ConcurrentHashMap<>();
+
+    /**
+     * 程序启动后执行：恢复未完成的下载任务的消息监控
+     * <p>
+     * 查询所有下载中的任务，如果有关联的 Bot 消息，重新启动监控线程。
+     * 这样即使程序重启，下载完成后仍能更新原消息。
+     * </p>
+     */
+    @PostConstruct
+    public void init() {
+        log.info("开始检查未完成的下载任务...");
+        try {
+            // 查询所有下载中的任务
+            List<DownloadTask> downloadingTasks = downloadTaskMapper.findByStatus("DOWNLOADING");
+            
+            for (DownloadTask task : downloadingTasks) {
+                // 只处理有关联 Bot 消息的任务
+                if (task.getBotChatId() != null && task.getBotMessageId() != null) {
+                    final long taskId = task.getId();
+                    final long botChatId = task.getBotChatId();
+                    final long botMessageId = task.getBotMessageId();
+                    
+                    log.info("恢复任务 {} 的消息监控 (chatId={}, msgId={})", taskId, botChatId, botMessageId);
+                    
+                    // 重新启动监控线程
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            boolean completed = false;
+                            int previousProgress = -1;
+                            
+                            while (!completed) {
+                                Thread.sleep(2000); // 每 2 秒查询一次
+                                
+                                DownloadTask currentTask = downloadTaskMapper.findById(taskId);
+                                if (currentTask == null) continue;
+                                
+                                String status = currentTask.getStatus();
+                                
+                                // 检查是否完成
+                                if ("SUCCESS_DOWNLOAD".equals(status) || 
+                                    "FAILED_DOWNLOAD".equals(status) || 
+                                    "SKIP_DOWNLOAD".equals(status)) {
+                                    
+                                    // 下载完成，编辑最终消息
+                                    String finalMsg = "下载完成：\n" +
+                                                     "🆔 task id: " + taskId + "\n" +
+                                                     "📥 下载: " + fmtSize(currentTask.getFileSize() != null ? currentTask.getFileSize() : 0) + "\n" +
+                                                     "├─ 📁 总数: 1\n" +
+                                                     "├─ ✅ 成功: " + ("SUCCESS_DOWNLOAD".equals(status) ? 1 : 0) + "\n" +
+                                                     "├─ ❌ 失败: " + ("FAILED_DOWNLOAD".equals(status) ? 1 : 0) + "\n" +
+                                                     "└─ ⏩ 跳过: " + ("SKIP_DOWNLOAD".equals(status) ? 1 : 0);
+                                    
+                                    editMessageText(botChatId, botMessageId, finalMsg);
+                                    completed = true;
+                                } else if ("DOWNLOADING".equals(status)) {
+                                    // 下载中，更新进度
+                                    Long downloaded = currentTask.getDownloadedSize();
+                                    Long total = currentTask.getFileSize();
+                                    Double speed = currentTask.getDownloadSpeed();
+                                    
+                                    if (downloaded != null && total != null && total > 0) {
+                                        int progress = (int) (downloaded * 100 / total);
+                                        
+                                        // 只有进度变化超过 5% 才更新消息（避免频繁编辑）
+                                        if (Math.abs(progress - previousProgress) >= 5 || previousProgress == -1) {
+                                            String fileName = currentTask.getFileName() != null ? 
+                                                                     currentTask.getFileName() : "unknown";
+                                            
+                                            String progressMsg = "下载中：\n" +
+                                                                             "🆔 task id: " + taskId + "\n" +
+                                                                             "📥 下载: " + fmtSize(downloaded) + "\n" +
+                                                                             "├─ 📁 总数: 1\n" +
+                                                                             "├─ ✅ 成功: 0\n" +
+                                                                             "├─ ❌ 失败: 0\n" +
+                                                                             "└─ ⏩ 跳过: 0\n\n" +
+                                                                             "📥 下载进度:\n" +
+                                                                             " ├─ 🆔 消息ID: " + currentTask.getMessageId() + "\n" +
+                                                                             " │ ├─ 📁 : " + currentTask.getMessageId() + " " + fileName + "\n" +
+                                                                             " │ ├─ 📏 : " + fmtSize(total) + "\n" +
+                                                                             " │ ├─ ⚡ : " + (speed != null ? fmtSize((long) (speed / 1) ) + "/s" : "0B/s") + "\n" +
+                                                                             " │ └─ 📊 : [" + generateProgressBar(progress) + "] (" + progress + "%)";
+                                            
+                                            editMessageText(botChatId, botMessageId, progressMsg);
+                                            previousProgress = progress;
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.error("恢复监控线程失败 taskId={}", taskId, e);
+                        }
+                    });
+                }
+            }
+        } catch (Exception e) {
+            log.error("初始化失败", e);
+        }
+    }
 
     public void handleMessage(TdApi.Message message) {
         if (!(message.content instanceof TdApi.MessageText mt)) return;
@@ -128,8 +227,98 @@ public class BotCommandHandler {
                         return;
                     }
                     downloadCoreService.startDownload(task);
-                    String type = msg.content.getClass().getSimpleName().replace("Message", "");
-                    sendTextMessage(chatId, "已加入下载队列:\n链接: " + link + "\n消息ID: " + msg.id + "\n类型: " + type);
+                    
+                    // 发送初始消息并记录消息 ID
+                    String initMsg = "任务提交：\n" +
+                                   "🆔 task id: " + task.getId() + "\n" +
+                                   "📥 下载: 0.0b\n" +
+                                   "├─ 📁 总数: 1\n" +
+                                   "├─ ✅ 成功: 0\n" +
+                                   "├─ ❌ 失败: 0\n" +
+                                   "└─ ⏩ 跳过: 0";
+                    Long botMsgId = sendTextMessage(chatId, initMsg);
+                    
+                    // 保存 botChatId 和 botMessageId 到数据库（支持重启后继续更新消息）
+                    if (botMsgId != null) {
+                        task.setBotChatId(chatId);
+                        task.setBotMessageId(botMsgId);
+                        downloadTaskMapper.update(task);
+                    }
+                    
+                    // 启动监控线程，定时更新消息
+                    if (botMsgId != null) {
+                        final long taskId = task.getId();
+                        final long botChatId = chatId;
+                        final long botMessageId = botMsgId;
+                        
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                boolean completed = false;
+                                int previousProgress = -1;
+                                
+                                while (!completed) {
+                                    Thread.sleep(2000); // 每 2 秒查询一次
+                                    
+                                    DownloadTask currentTask = downloadTaskMapper.findById(taskId);
+                                    if (currentTask == null) continue;
+                                    
+                                    String status = currentTask.getStatus();
+                                    
+                                    // 检查是否完成
+                                    if ("SUCCESS_DOWNLOAD".equals(status) || 
+                                        "FAILED_DOWNLOAD".equals(status) || 
+                                        "SKIP_DOWNLOAD".equals(status)) {
+                                        
+                                        // 下载完成，编辑最终消息
+                                        String finalMsg = "下载完成：\n" +
+                                                         "🆔 task id: " + taskId + "\n" +
+                                                         "📥 下载: " + fmtSize(currentTask.getFileSize() != null ? currentTask.getFileSize() : 0) + "\n" +
+                                                         "├─ 📁 总数: 1\n" +
+                                                         "├─ ✅ 成功: " + ("SUCCESS_DOWNLOAD".equals(status) ? 1 : 0) + "\n" +
+                                                         "├─ ❌ 失败: " + ("FAILED_DOWNLOAD".equals(status) ? 1 : 0) + "\n" +
+                                                         "└─ ⏩ 跳过: " + ("SKIP_DOWNLOAD".equals(status) ? 1 : 0);
+                                        
+                                        editMessageText(botChatId, botMessageId, finalMsg);
+                                        completed = true;
+                                    } else if ("DOWNLOADING".equals(status)) {
+                                        // 下载中，更新进度
+                                        Long downloaded = currentTask.getDownloadedSize();
+                                        Long total = currentTask.getFileSize();
+                                        Double speed = currentTask.getDownloadSpeed();
+                                        
+                                        if (downloaded != null && total != null && total > 0) {
+                                            int progress = (int) (downloaded * 100 / total);
+                                            
+                                            // 只有进度变化超过 5% 才更新消息（避免频繁编辑）
+                                            if (Math.abs(progress - previousProgress) >= 5 || previousProgress == -1) {
+                                                String fileName = currentTask.getFileName() != null ? 
+                                                                 currentTask.getFileName() : "unknown";
+                                                
+                                                String progressMsg = "下载中：\n" +
+                                                                     "🆔 task id: " + taskId + "\n" +
+                                                                     "📥 下载: " + fmtSize(downloaded) + "\n" +
+                                                                     "├─ 📁 总数: 1\n" +
+                                                                     "├─ ✅ 成功: 0\n" +
+                                                                     "├─ ❌ 失败: 0\n" +
+                                                                     "└─ ⏩ 跳过: 0\n\n" +
+                                                                     "📥 下载进度:\n" +
+                                                                     " ├─ 🆔 消息ID: " + currentTask.getMessageId() + "\n" +
+                                                                     " │ ├─ 📁 : " + currentTask.getMessageId() + " " + fileName + "\n" +
+                                                                     " │ ├─ 📏 : " + fmtSize(total) + "\n" +
+                                                                     " │ ├─ ⚡ : " + (speed != null ? fmtSize((long) (speed / 1) ) + "/s" : "0B/s") + "\n" +
+                                                                     " │ └─ 📊 : [" + generateProgressBar(progress) + "] (" + progress + "%)";
+                                                
+                                                editMessageText(botChatId, botMessageId, progressMsg);
+                                                previousProgress = progress;
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.error("监控下载进度失败 taskId={}", task.getId(), e);
+                            }
+                        });
+                    }
                 } else {
                     String baseUrl = extractBaseUrl(link);
                     if (baseUrl == null) {
@@ -404,8 +593,98 @@ public class BotCommandHandler {
                 return;
             }
             downloadCoreService.startDownload(task);
-            String type = msg.content.getClass().getSimpleName().replace("Message", "");
-            sendTextMessage(chatId, "已加入下载队列:\n链接: " + link + "\n消息ID: " + msg.id + "\n类型: " + type);
+            
+            // 发送初始消息并记录消息 ID
+            String initMsg = "任务提交：\n" +
+                           "🆔 task id: " + task.getId() + "\n" +
+                           "📥 下载: 0.0b\n" +
+                           "├─ 📁 总数: 1\n" +
+                           "├─ ✅ 成功: 0\n" +
+                           "├─ ❌ 失败: 0\n" +
+                           "└─ ⏩ 跳过: 0";
+            Long botMsgId = sendTextMessage(chatId, initMsg);
+            
+            // 保存 botChatId 和 botMessageId 到数据库（支持重启后继续更新消息）
+            if (botMsgId != null) {
+                task.setBotChatId(chatId);
+                task.setBotMessageId(botMsgId);
+                downloadTaskMapper.update(task);
+            }
+            
+            // 启动监控线程，定时更新消息
+            if (botMsgId != null) {
+                final long taskId = task.getId();
+                final long botChatId = chatId;
+                final long botMessageId = botMsgId;
+                
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        boolean completed = false;
+                        int previousProgress = -1;
+                        
+                        while (!completed) {
+                            Thread.sleep(2000); // 每 2 秒查询一次
+                            
+                            DownloadTask currentTask = downloadTaskMapper.findById(taskId);
+                            if (currentTask == null) continue;
+                            
+                            String status = currentTask.getStatus();
+                            
+                            // 检查是否完成
+                            if ("SUCCESS_DOWNLOAD".equals(status) || 
+                                "FAILED_DOWNLOAD".equals(status) || 
+                                "SKIP_DOWNLOAD".equals(status)) {
+                                
+                                // 下载完成，编辑最终消息
+                                String finalMsg = "下载完成：\n" +
+                                                 "🆔 task id: " + taskId + "\n" +
+                                                 "📥 下载: " + fmtSize(currentTask.getFileSize() != null ? currentTask.getFileSize() : 0) + "\n" +
+                                                 "├─ 📁 总数: 1\n" +
+                                                 "├─ ✅ 成功: " + ("SUCCESS_DOWNLOAD".equals(status) ? 1 : 0) + "\n" +
+                                                 "├─ ❌ 失败: " + ("FAILED_DOWNLOAD".equals(status) ? 1 : 0) + "\n" +
+                                                 "└─ ⏩ 跳过: " + ("SKIP_DOWNLOAD".equals(status) ? 1 : 0);
+                                
+                                editMessageText(botChatId, botMessageId, finalMsg);
+                                completed = true;
+                            } else if ("DOWNLOADING".equals(status)) {
+                                // 下载中，更新进度
+                                Long downloaded = currentTask.getDownloadedSize();
+                                Long total = currentTask.getFileSize();
+                                Double speed = currentTask.getDownloadSpeed();
+                                
+                                if (downloaded != null && total != null && total > 0) {
+                                    int progress = (int) (downloaded * 100 / total);
+                                    
+                                    // 只有进度变化超过 5% 才更新消息（避免频繁编辑）
+                                    if (Math.abs(progress - previousProgress) >= 5 || previousProgress == -1) {
+                                        String fileName = currentTask.getFileName() != null ? 
+                                                                 currentTask.getFileName() : "unknown";
+                                        
+                                        String progressMsg = "下载中：\n" +
+                                                                     "🆔 task id: " + taskId + "\n" +
+                                                                     "📥 下载: " + fmtSize(downloaded) + "\n" +
+                                                                     "├─ 📁 总数: 1\n" +
+                                                                     "├─ ✅ 成功: 0\n" +
+                                                                     "├─ ❌ 失败: 0\n" +
+                                                                     "└─ ⏩ 跳过: 0\n\n" +
+                                                                     "📥 下载进度:\n" +
+                                                                     " ├─ 🆔 消息ID: " + currentTask.getMessageId() + "\n" +
+                                                                     " │ ├─ 📁 : " + currentTask.getMessageId() + " " + fileName + "\n" +
+                                                                     " │ ├─ 📏 : " + fmtSize(total) + "\n" +
+                                                                     " │ ├─ ⚡ : " + (speed != null ? fmtSize((long) (speed / 1) ) + "/s" : "0B/s") + "\n" +
+                                                                     " │ └─ 📊 : [" + generateProgressBar(progress) + "] (" + progress + "%)";
+                                        
+                                        editMessageText(botChatId, botMessageId, progressMsg);
+                                        previousProgress = progress;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error("监控下载进度失败 taskId={}", task.getId(), e);
+                    }
+                });
+            }
         });
     }
 
@@ -492,10 +771,20 @@ public class BotCommandHandler {
         }
     }
 
-    public void sendTextMessage(long chatId, String text) {
+    /**
+     * 发送文本消息（同步方式，返回消息 ID）
+     * <p>
+     * 使用 CompletableFuture 等待 TDLib 响应，获取发送的消息 ID。
+     * </p>
+     * 
+     * @param chatId 聊天 ID
+     * @param text 消息文本
+     * @return 消息 ID（发送失败时返回 null）
+     */
+    public Long sendTextMessage(long chatId, String text) {
         if (botClient == null) {
             log.warn("Bot 未连接");
-            return;
+            return null;
         }
         try {
             TdApi.SendMessage req = new TdApi.SendMessage();
@@ -505,11 +794,56 @@ public class BotCommandHandler {
             txtMsg.linkPreviewOptions = null;
             txtMsg.clearDraft = false;
             req.inputMessageContent = txtMsg;
+            
+            // 使用 CompletableFuture 等待响应
+            CompletableFuture<Long> future = new CompletableFuture<>();
             botClient.send(req, result -> {
-                if (result.isError()) log.warn("Bot 发送失败: {}", result.getError().message);
+                if (result.isError()) {
+                    log.warn("Bot 发送失败: {}", result.getError().message);
+                    future.complete(null);
+                } else {
+                    TdApi.Message sentMsg = (TdApi.Message) result.get();
+                    future.complete(sentMsg.id);
+                }
             });
+            
+            // 等待最多 5 秒
+            return future.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("发送消息失败 chatId={}: {}", chatId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 编辑已发送的消息（用于更新下载进度）
+     * <p>
+     * 使用 TDLib 的 EditMessageText 方法编辑消息。
+     * </p>
+     * 
+     * @param chatId 聊天 ID
+     * @param messageId 消息 ID
+     * @param newText 新的消息文本
+     */
+    public void editMessageText(long chatId, long messageId, String newText) {
+        if (botClient == null) {
+            log.warn("Bot 未连接，无法编辑消息");
+            return;
+        }
+        try {
+            TdApi.EditMessageText req = new TdApi.EditMessageText();
+            req.chatId = chatId;
+            req.messageId = messageId;
+            TdApi.InputMessageText txtMsg = new TdApi.InputMessageText();
+            txtMsg.text = new TdApi.FormattedText(newText, null);
+            txtMsg.linkPreviewOptions = null;
+            txtMsg.clearDraft = false;
+            req.inputMessageContent = txtMsg;
+            botClient.send(req, result -> {
+                if (result.isError()) log.warn("编辑消息失败: {}", result.getError().message);
+            });
+        } catch (Exception e) {
+            log.error("编辑消息失败 chatId={} messageId={}: {}", chatId, messageId, e.getMessage());
         }
     }
 
@@ -565,6 +899,29 @@ public class BotCommandHandler {
         if (b < 1024 * 1024) return String.format("%.1f KB", b / 1024.0);
         if (b < 1024 * 1024 * 1024) return String.format("%.1f MB", b / (1024.0 * 1024));
         return String.format("%.2f GB", b / (1024.0 * 1024 * 1024));
+    }
+
+    /**
+     * 生成进度条字符串
+     * <p>
+     * 根据进度百分比生成可视化进度条。
+     * </p>
+     * 
+     * @param progress 进度百分比（0-100）
+     * @return 进度条字符串（例如：[████░░░░░░] (30%)）
+     */
+    private static String generateProgressBar(int progress) {
+        int barLength = 10;
+        int filled = (int) (progress / 100.0 * barLength);
+        if (filled > barLength) filled = barLength;
+        if (filled < 0) filled = 0;
+        
+        StringBuilder bar = new StringBuilder();
+        for (int i = 0; i < barLength; i++) {
+            bar.append(i < filled ? "▓" : "░");
+        }
+        
+        return bar.toString();
     }
 
     private static String nvl(String s, String def) {

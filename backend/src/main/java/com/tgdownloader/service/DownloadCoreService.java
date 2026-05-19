@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import com.tgdownloader.event.DownloadProgressEvent;
 
 import jakarta.annotation.PostConstruct;
 import java.io.File;
@@ -552,6 +554,7 @@ public class DownloadCoreService {
 
             // 检查目标文件是否已存在（已存在则跳过）
             File targetFile = new File(targetDir + File.separator + newFileName);
+            log.info("文件将保存到：{}", targetFile.getAbsolutePath());
             if (targetFile.exists()) {
                 log.info("文件已存在，跳过: {}", targetFile.getAbsolutePath());
                 task.setSkipTask(task.getSkipTask() + 1);

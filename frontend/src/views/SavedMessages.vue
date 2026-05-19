@@ -315,13 +315,13 @@ const refreshList = async () => {
   loading.value = true
   try {
     if (activeTab.value === 'pending') {
-      // 待下载：包含 PENDING, DOWNLOADING, PAUSED, FAILED
+      // 待下载：后端已过滤（status != 'SUCCESS_DOWNLOAD'）
       const result = await savedMessagesApi.getTasks(false)
       pendingList.value = result.tasks || []
     } else {
-      // 已下载
+      // 已下载：后端已过滤（status = 'SUCCESS_DOWNLOAD'）
       const result = await savedMessagesApi.getTasks(true)
-      downloadedList.value = (result.tasks || []).filter(t => t.status === 'SUCCESS_DOWNLOAD')
+      downloadedList.value = result.tasks || []
     }
   } catch (error) {
     ElMessage.error('刷新失败')

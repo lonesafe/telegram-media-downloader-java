@@ -163,11 +163,39 @@ public interface DownloadTaskMapper {
     List<DownloadTask> findSavedMessages(@Param("offset") int offset, @Param("limit") int limit);
 
     /**
+     * 查询收藏夹任务（分页，按下载状态过滤）
+     * <p>
+     * 根据 {@code includeDownloaded} 参数过滤任务：
+     * <ul>
+     *   <li>{@code true} - 只返回已下载完成的任务（status = 'SUCCESS_DOWNLOAD'）</li>
+     *   <li>{@code false} - 只返回待下载的任务（status != 'SUCCESS_DOWNLOAD'）</li>
+     * </ul>
+     * </p>
+     * 
+     * @param offset           偏移量（从0开始）
+     * @param size             每页记录数
+     * @param includeDownloaded 是否只包含已下载任务
+     * @return 符合条件的收藏夹任务列表
+     */
+    List<DownloadTask> findSavedMessagesTasks(@Param("offset") int offset, @Param("size") int size, @Param("includeDownloaded") boolean includeDownloaded);
+
+    /**
      * 统计收藏夹消息数量
      * 
      * @return 收藏夹消息对应的下载任务数量
      */
     long countSavedMessages();
+
+    /**
+     * 统计收藏夹任务数量（按下载状态过滤）
+     * <p>
+     * 根据 {@code includeDownloaded} 参数过滤任务。
+     * </p>
+     * 
+     * @param includeDownloaded 是否只包含已下载任务
+     * @return 符合条件的收藏夹任务数量
+     */
+    long countSavedMessagesTasks(@Param("includeDownloaded") boolean includeDownloaded);
 
     /**
      * 按状态统计收藏夹消息数量

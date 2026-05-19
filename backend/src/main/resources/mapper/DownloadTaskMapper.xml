@@ -31,6 +31,8 @@
         <result column="failed_task" property="failedTask"/>
         <result column="skip_task" property="skipTask"/>
         <result column="download_speed" property="downloadSpeed"/>
+        <result column="bot_chat_id" property="botChatId"/>
+        <result column="bot_message_id" property="botMessageId"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
@@ -82,14 +84,14 @@
             telegram_file_id, telegram_unique_file_id, downloaded_size, message_data,
             chat_config_id, extra_data, is_stop_transmission,
             started_at, finished_at, total_task, success_task, failed_task, skip_task,
-            download_speed, created_at, updated_at
+            download_speed, bot_chat_id, bot_message_id, created_at, updated_at
         ) VALUES (
             #{messageId}, #{chatId}, #{chatTitle}, #{fileName}, #{fileSize}, #{mimeType}, #{status},
             #{localPath}, #{errorMessage}, #{remoteUrl}, #{uploadStatus},
             #{telegramFileId}, #{telegramUniqueFileId}, #{downloadedSize}, #{messageData},
             #{chatConfigId}, #{extraData}, #{isStopTransmission},
             #{startedAt}, #{finishedAt}, #{totalTask}, #{successTask}, #{failedTask}, #{skipTask},
-            #{downloadSpeed}, NOW(), NOW()
+            #{downloadSpeed}, #{botChatId}, #{botMessageId}, NOW(), NOW()
         )
     </insert>
 
@@ -119,6 +121,8 @@
             <if test="failedTask != null">, failed_task</if>
             <if test="skipTask != null">, skip_task</if>
             <if test="downloadSpeed != null">, download_speed</if>
+            <if test="botChatId != null">, bot_chat_id</if>
+            <if test="botMessageId != null">, bot_message_id</if>
         ) VALUES (
             #{messageId}, #{chatId}, #{status}
             <if test="chatTitle != null">, #{chatTitle}</if>
@@ -143,6 +147,8 @@
             <if test="failedTask != null">, #{failedTask}</if>
             <if test="skipTask != null">, #{skipTask}</if>
             <if test="downloadSpeed != null">, #{downloadSpeed}</if>
+            <if test="botChatId != null">, #{botChatId}</if>
+            <if test="botMessageId != null">, #{botMessageId}</if>
         )
     </insert>
 
@@ -174,6 +180,8 @@
             failed_task = #{failedTask},
             skip_task = #{skipTask},
             download_speed = #{downloadSpeed},
+            bot_chat_id = #{botChatId},
+            bot_message_id = #{botMessageId},
             updated_at = NOW()
         WHERE id = #{id}
     </update>
@@ -206,6 +214,32 @@
     <select id="countSavedMessagesByStatuses" resultType="long">
         SELECT COUNT(*) FROM download_task 
         WHERE chat_id LIKE '-%' AND status IN (${statuses})
+    </select>
+
+    <!-- 查询收藏夹任务（分页，按下载状态过滤） -->
+    <select id="findSavedMessagesTasks" resultMap="baseResultMap">
+        SELECT * FROM download_task t
+        WHERE t.chat_id LIKE '-%'
+        <if test="includeDownloaded">
+            AND t.status = 'SUCCESS_DOWNLOAD'
+        </if>
+        <if test="!includeDownloaded">
+            AND t.status != 'SUCCESS_DOWNLOAD'
+        </if>
+        ORDER BY t.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <!-- 统计收藏夹任务数量（按下载状态过滤） -->
+    <select id="countSavedMessagesTasks" resultType="long">
+        SELECT COUNT(*) FROM download_task t
+        WHERE t.chat_id LIKE '-%'
+        <if test="includeDownloaded">
+            AND t.status = 'SUCCESS_DOWNLOAD'
+        </if>
+        <if test="!includeDownloaded">
+            AND t.status != 'SUCCESS_DOWNLOAD'
+        </if>
     </select>
 
 </mapper>
